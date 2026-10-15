@@ -39,13 +39,24 @@ object YoutubeDownloader {
         val cleanUrl = urlInput.trim()
         val videoId = extractVideoId(cleanUrl)
 
-        val metadata: CleanedMetadata = if (videoId != null && !apiKey.isNullOrBlank()) {
-            GoogleApiService.fetchVideoMetadata(videoId, apiKey)
-        } else if (videoId != null) {
-            MetadataCleaner.clean("YouTube Track ($videoId)", "YouTube Artist")
-        } else {
-            MetadataCleaner.clean(cleanUrl, "Web Audio")
+        var rawTitle = if (videoId != null) "YouTube Track ($videoId)" else cleanUrl
+        var channelTitle = "YouTube Artist"
+        var description = ""
+
+        if (videoId != null && !apiKey.isNullOrBlank()) {
+            val officialData = GoogleApiService.fetchVideoMetadata(videoId, apiKey)
+            rawTitle = officialData.songTitle
+            channelTitle = officialData.unitArtist
+            description = officialData.albumName
         }
+
+        // Apply Gemini AI metadata cleaning
+        val metadata: CleanedMetadata = GeminiMetadataCleaner.cleanWithGemini(
+            rawTitle = rawTitle,
+            channelTitle = channelTitle,
+            description = description,
+            apiKey = apiKey
+        )
 
         val finalTitle = if (!customTitle.isNullOrBlank()) customTitle else metadata.songTitle
         val thumbnailUrl = videoId?.let { getThumbnailUrl(it) } ?: ""
