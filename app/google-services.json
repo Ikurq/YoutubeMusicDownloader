@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1089531586598",
+    "project_id": "com-example-musicdownlod-c25ab",
+    "storage_bucket": "com-example-musicdownlod-c25ab.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1089531586598:android:8654d94bd01a047cd9dee7",
+        "android_client_info": {
+          "package_name": "com.example.youtubemusicdownloder"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyClAziulYU3MWYBHcErpBqx82cexwChDzw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
