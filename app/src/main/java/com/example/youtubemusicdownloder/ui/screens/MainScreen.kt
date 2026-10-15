@@ -6,10 +6,15 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Refresh
@@ -24,6 +29,7 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -36,6 +42,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -47,6 +54,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.youtubemusicdownloder.model.Track
 import com.example.youtubemusicdownloder.ui.MusicViewModel
 import com.example.youtubemusicdownloder.ui.components.AddTrackToPlaylistDialog
+import com.example.youtubemusicdownloder.ui.components.DownloadQueueSheet
 import com.example.youtubemusicdownloder.ui.components.MiniPlayer
 import com.example.youtubemusicdownloder.ui.components.UpdateDialog
 
@@ -73,6 +81,7 @@ fun MainScreen(
 
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var showPlayerSheet by remember { mutableStateOf(false) }
+    var showQueueSheet by remember { mutableStateOf(false) }
     var trackToAddToPlaylist by remember { mutableStateOf<Track?>(null) }
 
     val tracks by viewModel.tracks.collectAsState()
@@ -81,7 +90,9 @@ fun MainScreen(
     val searchResults by viewModel.searchResults.collectAsState()
     val relatedTracks by viewModel.relatedTracks.collectAsState()
     val isSearching by viewModel.isSearching.collectAsState()
-    val downloadingTrackIds by viewModel.downloadingTrackIds.collectAsState()
+
+    val downloadQueue by viewModel.downloadQueue.collectAsState()
+    val isQueueProcessing by viewModel.isQueueProcessing.collectAsState()
 
     val availableUpdate by viewModel.availableUpdate.collectAsState()
     val isCheckingUpdate by viewModel.isCheckingUpdate.collectAsState()
@@ -94,7 +105,6 @@ fun MainScreen(
     val durationMs by viewModel.durationMs.collectAsState()
     val repeatMode by viewModel.repeatMode.collectAsState()
     val isShuffle by viewModel.isShuffle.collectAsState()
-    val isDownloading by viewModel.isDownloading.collectAsState()
     val statusMessage by viewModel.statusMessage.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -121,7 +131,7 @@ fun MainScreen(
             onSeek = { viewModel.seekTo(it) },
             onToggleRepeat = { viewModel.toggleRepeatMode() },
             onToggleShuffle = { viewModel.toggleShuffle() },
-            onAddRelatedTrack = { url, title -> viewModel.parseAndAddTrack(url, title) },
+            onAddRelatedTrack = { url, title -> viewModel.addToDownloadQueue(url, title) },
             onCloseClick = { showPlayerSheet = false }
         )
     } else {
@@ -136,6 +146,33 @@ fun MainScreen(
                         )
                     },
                     actions = {
+                        // DL Queue Button
+                        IconButton(onClick = { showQueueSheet = true }) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Download,
+                                    contentDescription = "DLキュー",
+                                    tint = if (downloadQueue.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                if (downloadQueue.isNotEmpty()) {
+                                    Spacer(modifier = Modifier.width(2.dp))
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = MaterialTheme.colorScheme.primary
+                                    ) {
+                                        Text(
+                                            text = "${downloadQueue.size}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = Color.White,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // App Update Check
                         IconButton(onClick = { viewModel.checkForUpdates(silent = false) }) {
                             Icon(
                                 imageVector = Icons.Default.Refresh,
@@ -217,12 +254,12 @@ fun MainScreen(
                         apiKey = apiKey,
                         searchResults = searchResults,
                         isSearching = isSearching,
-                        isDownloading = isDownloading,
+                        isDownloading = isQueueProcessing,
                         onSearch = { viewModel.searchYouTube(it) },
                         onClearSearch = { viewModel.clearSearchResults() },
                         onSaveApiKey = { viewModel.saveApiKey(it) },
                         onAddTrack = { url, title ->
-                            viewModel.parseAndAddTrack(url, title)
+                            viewModel.addToDownloadQueue(url, title ?: "YouTube Track", title)
                         }
                     )
                     1 -> PlaylistsScreen(
@@ -230,7 +267,6 @@ fun MainScreen(
                         allTracks = tracks,
                         currentTrack = currentTrack,
                         isPlaying = isPlaying,
-                        downloadingTrackIds = downloadingTrackIds,
                         onCreatePlaylist = { viewModel.createPlaylist(it) },
                         onGenerateAiPlaylists = { viewModel.generateAiPlaylists() },
                         onDeletePlaylist = { viewModel.deletePlaylist(it) },
@@ -249,7 +285,6 @@ fun MainScreen(
                         tracks = tracks,
                         currentTrack = currentTrack,
                         isPlaying = isPlaying,
-                        downloadingTrackIds = downloadingTrackIds,
                         onTrackClick = { track, queue ->
                             viewModel.playTrack(track, queue)
                         },
@@ -269,6 +304,18 @@ fun MainScreen(
                 }
             }
         }
+    }
+
+    // Download Queue Sheet
+    if (showQueueSheet) {
+        DownloadQueueSheet(
+            queue = downloadQueue,
+            isProcessing = isQueueProcessing,
+            onRemoveItem = { viewModel.removeFromDownloadQueue(it) },
+            onClearCompleted = { viewModel.clearCompletedQueue() },
+            onClearAll = { viewModel.clearAllQueue() },
+            onDismiss = { showQueueSheet = false }
+        )
     }
 
     // In-App Update Dialog

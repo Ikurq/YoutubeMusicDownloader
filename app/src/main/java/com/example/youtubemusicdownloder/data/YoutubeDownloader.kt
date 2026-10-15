@@ -42,21 +42,30 @@ object YoutubeDownloader {
         return "https://img.youtube.com/vi/$videoId/hqdefault.jpg"
     }
 
-    private fun getPublicMusicDirectory(context: Context): File {
-        val publicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
-        val targetFolder = File(publicDir, "MusicPlayerDL")
-        if (!targetFolder.exists()) {
-            targetFolder.mkdirs()
-        }
-        return if (targetFolder.exists() && targetFolder.canWrite()) {
-            targetFolder
-        } else {
-            context.getExternalFilesDir("Music") ?: context.filesDir
+    private fun getPrimaryStorageDir(context: Context): File {
+        val appMusicDir = context.getExternalFilesDir("Music") ?: context.filesDir
+        if (!appMusicDir.exists()) appMusicDir.mkdirs()
+        return appMusicDir
+    }
+
+    private fun copyToPublicMusicDir(sourceFile: File, fileName: String) {
+        try {
+            val publicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
+            val appDir = File(publicDir, "MusicPlayerDL")
+            if (!appDir.exists()) appDir.mkdirs()
+            val destFile = File(appDir, fileName)
+            sourceFile.inputStream().use { input ->
+                FileOutputStream(destFile).use { output ->
+                    input.copyTo(output)
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 
     suspend fun fetchDirectAudioUrl(videoId: String): String? = withContext(Dispatchers.IO) {
-        // 1. Try InnerTube API (ANDROID_VR client)
+        // 1. InnerTube API
         try {
             val url = URL("https://www.youtube.com/youtubei/v1/player")
             val conn = url.openConnection() as HttpURLConnection
@@ -116,7 +125,7 @@ object YoutubeDownloader {
             e.printStackTrace()
         }
 
-        // 2. Try Invidious nodes
+        // 2. Invidious fallback nodes
         for (node in FALLBACK_INVIDIOUS_NODES) {
             try {
                 val apiUrl = URL("$node/api/v1/videos/$videoId")
@@ -155,7 +164,7 @@ object YoutubeDownloader {
             }
         }
 
-        // 3. Dynamic fallback
+        // 3. Dynamic instances fallback
         try {
             val listUrl = URL("https://api.invidious.io/instances.json?sort_by=type,health")
             val conn = listUrl.openConnection() as HttpURLConnection
@@ -252,7 +261,11 @@ object YoutubeDownloader {
         )
     }
 
-    suspend fun downloadAudioToFile(context: Context, track: Track): File = withContext(Dispatchers.IO) {
+    suspend fun downloadAudioToFile(
+        context: Context,
+        track: Track,
+        onProgress: ((percent: Int, downloadedBytes: Long, totalBytes: Long) -> Unit)? = null
+    ): File = withContext(Dispatchers.IO) {
         val videoId = extractVideoId(track.youtubeUrl)
         var streamUrl = track.audioUrl
 
@@ -264,12 +277,14 @@ object YoutubeDownloader {
             throw IllegalStateException("YouTube 音声ストリームの取得に失敗しました。URLをご確認ください。")
         }
 
-        val targetDir = getPublicMusicDirectory(context)
+        val primaryDir = getPrimaryStorageDir(context)
         val cleanTitle = track.title.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim()
-        val safeFileName = "${cleanTitle}.m4a"
-        val outputFile = File(targetDir, safeFileName)
+        val safeFileName = "${cleanTitle}_${track.id.take(8)}.m4a"
+        val outputFile = File(primaryDir, safeFileName)
 
         if (outputFile.exists() && outputFile.length() > 0) {
+            onProgress?.invoke(100, outputFile.length(), outputFile.length())
+            copyToPublicMusicDir(outputFile, "$cleanTitle.m4a")
             return@withContext outputFile
         }
 
@@ -283,11 +298,24 @@ object YoutubeDownloader {
         )
 
         if (connection.responseCode in 200..299) {
+            val totalLength = connection.contentLengthLong.coerceAtLeast(1L)
+
             connection.inputStream.use { input ->
                 FileOutputStream(outputFile).use { output ->
-                    input.copyTo(output)
+                    val buffer = ByteArray(8192)
+                    var bytesRead: Int
+                    var totalRead = 0L
+
+                    while (input.read(buffer).also { bytesRead = it } != -1) {
+                        output.write(buffer, 0, bytesRead)
+                        totalRead += bytesRead
+                        val percent = ((totalRead * 100) / totalLength).toInt().coerceIn(0, 100)
+                        onProgress?.invoke(percent, totalRead, totalLength)
+                    }
                 }
             }
+
+            copyToPublicMusicDir(outputFile, "$cleanTitle.m4a")
         } else {
             throw IllegalStateException("ダウンロードサーバーエラー: HTTP ${connection.responseCode}")
         }

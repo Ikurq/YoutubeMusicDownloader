@@ -5,6 +5,8 @@ import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.youtubemusicdownloder.data.DownloadQueueItem
+import com.example.youtubemusicdownloder.data.DownloadQueueManager
 import com.example.youtubemusicdownloder.data.GeminiMetadataCleaner
 import com.example.youtubemusicdownloder.data.LocalAudioImporter
 import com.example.youtubemusicdownloder.data.MusicRepository
@@ -26,6 +28,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = MusicRepository(application)
     val playerManager = MusicPlayerManager(application)
+    val downloadQueueManager = DownloadQueueManager(application)
 
     private val _tracks = MutableStateFlow<List<Track>>(emptyList())
     val tracks: StateFlow<List<Track>> = _tracks.asStateFlow()
@@ -45,8 +48,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private val _isSearching = MutableStateFlow(false)
     val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
 
-    private val _downloadingTrackIds = MutableStateFlow<Set<String>>(emptySet())
-    val downloadingTrackIds: StateFlow<Set<String>> = _downloadingTrackIds.asStateFlow()
+    // Download Queue
+    val downloadQueue: StateFlow<List<DownloadQueueItem>> = downloadQueueManager.queue
+    val isQueueProcessing: StateFlow<Boolean> = downloadQueueManager.isProcessing
 
     // Update state
     private val _availableUpdate = MutableStateFlow<ReleaseInfo?>(null)
@@ -68,21 +72,49 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     val repeatMode: StateFlow<RepeatMode> = playerManager.repeatMode
     val isShuffle: StateFlow<Boolean> = playerManager.isShuffle
 
-    private val _isDownloading = MutableStateFlow(false)
-    val isDownloading: StateFlow<Boolean> = _isDownloading.asStateFlow()
-
     private val _statusMessage = MutableStateFlow<String?>(null)
     val statusMessage: StateFlow<String?> = _statusMessage.asStateFlow()
 
     init {
         loadData()
         checkForUpdates(silent = true)
+
+        downloadQueueManager.onTrackDownloaded = { downloadedTrack ->
+            val currentList = _tracks.value.toMutableList()
+            currentList.add(0, downloadedTrack)
+            _tracks.value = currentList.distinctBy { it.id }
+            repository.saveTracks(currentList)
+        }
+
+        downloadQueueManager.onStatusMessage = { msg ->
+            _statusMessage.value = msg
+        }
     }
 
     private fun loadData() {
         _tracks.value = repository.loadTracks()
         _playlists.value = repository.loadPlaylists()
         _apiKey.value = repository.getApiKey()
+    }
+
+    fun addToDownloadQueue(url: String, title: String, customTitle: String? = null) {
+        downloadQueueManager.addToQueue(url, title, customTitle, _apiKey.value)
+    }
+
+    fun addMultipleToDownloadQueue(items: List<Pair<String, String>>) {
+        downloadQueueManager.addMultipleToQueue(items, _apiKey.value)
+    }
+
+    fun removeFromDownloadQueue(id: String) {
+        downloadQueueManager.removeFromQueue(id)
+    }
+
+    fun clearCompletedQueue() {
+        downloadQueueManager.clearCompleted()
+    }
+
+    fun clearAllQueue() {
+        downloadQueueManager.clearAll()
     }
 
     fun generateAiPlaylists() {
@@ -119,7 +151,6 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     fun importLocalAudioFiles(context: Context, uris: List<Uri>) {
         if (uris.isEmpty()) return
         viewModelScope.launch {
-            _isDownloading.value = true
             _statusMessage.value = "${uris.size}件のローカルファイルを読み込み中..."
             var importedCount = 0
             val newTracks = mutableListOf<Track>()
@@ -141,7 +172,6 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             } else {
                 _statusMessage.value = "ローカルファイルの読み込みに失敗しました"
             }
-            _isDownloading.value = false
         }
     }
 
@@ -225,67 +255,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         _searchResults.value = emptyList()
     }
 
-    fun parseAndAddTrack(urlInput: String, customTitle: String? = null) {
-        if (urlInput.isBlank()) return
-
-        viewModelScope.launch {
-            _isDownloading.value = true
-            _statusMessage.value = "✨ Gemini AIが楽曲メタデータ・公式アルバム情報を照会中..."
-            try {
-                var newTrack = YoutubeDownloader.parseTrackFromUrl(urlInput, customTitle, _apiKey.value)
-
-                _downloadingTrackIds.value = _downloadingTrackIds.value + newTrack.id
-                val file = YoutubeDownloader.downloadAudioToFile(getApplication(), newTrack)
-                newTrack = newTrack.copy(
-                    localFilePath = file.absolutePath,
-                    isDownloaded = true
-                )
-
-                val currentList = _tracks.value.toMutableList()
-                currentList.add(0, newTrack)
-                _tracks.value = currentList
-                repository.saveTracks(currentList)
-
-                _statusMessage.value = "「${newTrack.title}」をMusicフォルダに保存しました！"
-            } catch (e: Exception) {
-                e.printStackTrace()
-                _statusMessage.value = "ダウンロードに失敗しました: ${e.message}"
-            } finally {
-                _isDownloading.value = false
-                _downloadingTrackIds.value = _downloadingTrackIds.value - urlInput
-            }
-        }
-    }
-
     fun downloadTrack(track: Track) {
         if (track.isDownloaded && !track.localFilePath.isNullOrBlank()) return
-
-        viewModelScope.launch {
-            _isDownloading.value = true
-            _downloadingTrackIds.value = _downloadingTrackIds.value + track.id
-            _statusMessage.value = "「${track.title}」をダウンロード中..."
-            try {
-                val file = YoutubeDownloader.downloadAudioToFile(getApplication(), track)
-                val updatedTrack = track.copy(
-                    localFilePath = file.absolutePath,
-                    isDownloaded = true
-                )
-
-                val updatedTracks = _tracks.value.map {
-                    if (it.id == track.id) updatedTrack else it
-                }
-                _tracks.value = updatedTracks
-                repository.saveTracks(updatedTracks)
-
-                _statusMessage.value = "ダウンロード完了: ${track.title}"
-            } catch (e: Exception) {
-                e.printStackTrace()
-                _statusMessage.value = "ダウンロードに失敗しました"
-            } finally {
-                _isDownloading.value = false
-                _downloadingTrackIds.value = _downloadingTrackIds.value - track.id
-            }
-        }
+        addToDownloadQueue(track.youtubeUrl, track.title)
     }
 
     fun deleteTrack(trackId: String) {
