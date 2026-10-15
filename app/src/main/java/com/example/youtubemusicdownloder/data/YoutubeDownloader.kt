@@ -19,12 +19,11 @@ object YoutubeDownloader {
         "(?:v=|/shorts/|/embed/|youtu\\.be/|v/)([a-zA-Z0-9_-]{11})"
     )
 
-    private val FALLBACK_INVIDIOUS_NODES = listOf(
+    private val STATIC_INVIDIOUS_NODES = listOf(
         "https://invidious.f5.si",
         "https://inv.nadeko.net",
-        "https://yt.artemislena.eu",
-        "https://invidious.perennialworks.net",
-        "https://invidious.nerdvpn.de"
+        "https://invidious.nerdvpn.de",
+        "https://yt.artemislena.eu"
     )
 
     fun extractVideoId(url: String): String? {
@@ -65,14 +64,16 @@ object YoutubeDownloader {
     }
 
     suspend fun fetchDirectAudioUrl(videoId: String): String? = withContext(Dispatchers.IO) {
-        // 1. Try InnerTube API (ANDROID_VR client)
+        val errors = mutableListOf<String>()
+
+        // Stage 1: InnerTube API
         try {
             val url = URL("https://www.youtube.com/youtubei/v1/player")
             val conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "POST"
             conn.setRequestProperty("Content-Type", "application/json")
-            conn.connectTimeout = 6000
-            conn.readTimeout = 6000
+            conn.connectTimeout = 5000
+            conn.readTimeout = 5000
             conn.doOutput = true
 
             val jsonBody = JSONObject().apply {
@@ -119,20 +120,24 @@ object YoutubeDownloader {
                             return@withContext bestAudioUrl
                         }
                     }
+                } else {
+                    errors.add("InnerTube: $status")
                 }
+            } else {
+                errors.add("InnerTube HTTP ${conn.responseCode}")
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            errors.add("InnerTube Error: ${e.message}")
         }
 
-        // 2. Try Invidious nodes
-        for (node in FALLBACK_INVIDIOUS_NODES) {
+        // Stage 2: Static Invidious Nodes
+        for (node in STATIC_INVIDIOUS_NODES) {
             try {
                 val apiUrl = URL("$node/api/v1/videos/$videoId")
                 val conn = apiUrl.openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"
-                conn.connectTimeout = 5000
-                conn.readTimeout = 5000
+                conn.connectTimeout = 4000
+                conn.readTimeout = 4000
 
                 if (conn.responseCode == 200) {
                     val responseStr = conn.inputStream.bufferedReader().use { it.readText() }
@@ -158,13 +163,15 @@ object YoutubeDownloader {
                             return@withContext bestAudioUrl
                         }
                     }
+                } else {
+                    errors.add("$node: HTTP ${conn.responseCode}")
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
+                errors.add("$node: ${e.message}")
             }
         }
 
-        // 3. Dynamic Invidious instances
+        // Stage 3: Dynamic Invidious Live Instance Pool
         try {
             val listUrl = URL("https://api.invidious.io/instances.json?sort_by=type,health")
             val conn = listUrl.openConnection() as HttpURLConnection
@@ -175,7 +182,7 @@ object YoutubeDownloader {
                 val array = JSONArray(jsonStr)
                 var tried = 0
                 for (i in 0 until array.length()) {
-                    if (tried >= 5) break
+                    if (tried >= 6) break
                     val inst = array.getJSONArray(i)
                     val domain = inst.optString(0)
                     val info = inst.optJSONObject(1)
@@ -203,13 +210,17 @@ object YoutubeDownloader {
                                 }
                             }
                         } catch (e: Exception) {
-                            e.printStackTrace()
+                            errors.add("$domain: ${e.message}")
                         }
                     }
                 }
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            errors.add("InvidiousPool: ${e.message}")
+        }
+
+        if (errors.isNotEmpty()) {
+            throw IllegalStateException("音源取得失敗: ${errors.take(2).joinToString("; ")}")
         }
 
         return@withContext null
@@ -253,7 +264,7 @@ object YoutubeDownloader {
             artist = metadata.unitArtist,
             album = metadata.albumName,
             youtubeUrl = cleanUrl,
-            audioUrl = "", // Fresh URL will be resolved at download time
+            audioUrl = "",
             thumbnailUrl = thumbnailUrl,
             durationMs = 210000L
         )
@@ -275,7 +286,7 @@ object YoutubeDownloader {
         }
 
         if (streamUrl.isBlank()) {
-            throw IllegalStateException("YouTube 音声ストリームの取得に失敗しました。動画URLまたはネットワークをご確認ください。")
+            throw IllegalStateException("YouTube 音声ストリームの取得に失敗しました。動画ID: $videoId")
         }
 
         val primaryDir = getPrimaryStorageDir(context)
@@ -318,7 +329,7 @@ object YoutubeDownloader {
 
                     conn.inputStream.use { input ->
                         FileOutputStream(outputFile).use { output ->
-                            val buffer = ByteArray(64 * 1024) // 64KB High-Speed Buffer
+                            val buffer = ByteArray(64 * 1024)
                             var bytesRead: Int
                             var totalRead = 0L
 
@@ -336,8 +347,9 @@ object YoutubeDownloader {
                         val freshUrl = fetchDirectAudioUrl(videoId)
                         if (freshUrl != null) streamUrl = freshUrl
                     }
+                    lastError = IllegalStateException("HTTP Error $responseCode (URL Expired)")
                 } else {
-                    throw IllegalStateException("HTTP Error $responseCode")
+                    lastError = IllegalStateException("HTTP Error $responseCode")
                 }
             } catch (e: Exception) {
                 lastError = e
@@ -347,7 +359,7 @@ object YoutubeDownloader {
 
         if (!success || !outputFile.exists() || outputFile.length() == 0L) {
             if (outputFile.exists()) outputFile.delete()
-            throw IllegalStateException("ダウンロード処理に失敗しました (${lastError?.message ?: "ネットワーク接続エラー"})")
+            throw IllegalStateException("DL失敗: ${lastError?.message ?: "ネットワーク接続エラー"}")
         }
 
         copyToPublicMusicDir(outputFile, "$cleanTitle.m4a")

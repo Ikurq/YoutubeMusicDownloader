@@ -312,6 +312,7 @@ fun MainScreen(
             queue = downloadQueue,
             isProcessing = isQueueProcessing,
             onRemoveItem = { viewModel.removeFromDownloadQueue(it) },
+            onRetryItem = { viewModel.retryDownloadQueueItem(it) },
             onClearCompleted = { viewModel.clearCompletedQueue() },
             onClearAll = { viewModel.clearAllQueue() },
             onDismiss = { showQueueSheet = false }

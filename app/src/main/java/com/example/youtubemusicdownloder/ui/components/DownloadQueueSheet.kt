@@ -17,7 +17,10 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.HourglassTop
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -41,6 +44,7 @@ fun DownloadQueueSheet(
     queue: List<DownloadQueueItem>,
     isProcessing: Boolean,
     onRemoveItem: (id: String) -> Unit,
+    onRetryItem: (id: String) -> Unit,
     onClearCompleted: () -> Unit,
     onClearAll: () -> Unit,
     onDismiss: () -> Unit
@@ -77,7 +81,9 @@ fun DownloadQueueSheet(
                                     .fillMaxWidth()
                                     .padding(vertical = 4.dp),
                                 shape = RoundedCornerShape(12.dp),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (item.status == DownloadStatus.FAILED) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                )
                             ) {
                                 Column(modifier = Modifier.padding(10.dp)) {
                                     Row(
@@ -96,6 +102,17 @@ fun DownloadQueueSheet(
                                             StatusTag(item)
                                         }
 
+                                        if (item.status == DownloadStatus.FAILED) {
+                                            IconButton(onClick = { onRetryItem(item.id) }) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Refresh,
+                                                    contentDescription = "再試行",
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                            }
+                                        }
+
                                         IconButton(onClick = { onRemoveItem(item.id) }) {
                                             Icon(
                                                 imageVector = Icons.Default.Delete,
@@ -112,6 +129,17 @@ fun DownloadQueueSheet(
                                             progress = { item.progressPercent / 100f },
                                             modifier = Modifier.fillMaxWidth(),
                                             color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+
+                                    if (item.status == DownloadStatus.FAILED && !item.errorMessage.isNullOrBlank()) {
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = "詳細エラー: ${item.errorMessage}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.error,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                     }
                                 }
@@ -214,9 +242,10 @@ private fun StatusTag(item: DownloadQueueItem) {
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = "失敗",
+                        text = "DL失敗 (タップで再試行)",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onErrorContainer
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        fontWeight = FontWeight.Bold
                     )
                 }
             }
@@ -227,7 +256,9 @@ private fun StatusTag(item: DownloadQueueItem) {
 @Composable
 private fun BoxCenterMessage(message: String) {
     Column(
-        modifier = Modifier.fillMaxWidth().height(200.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(200.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {

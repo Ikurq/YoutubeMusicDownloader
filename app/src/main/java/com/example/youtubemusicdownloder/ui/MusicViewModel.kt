@@ -109,6 +109,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         downloadQueueManager.removeFromQueue(id)
     }
 
+    fun retryDownloadQueueItem(id: String) {
+        downloadQueueManager.retryItem(id, _apiKey.value)
+    }
+
     fun clearCompletedQueue() {
         downloadQueueManager.clearCompleted()
     }

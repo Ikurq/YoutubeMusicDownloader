@@ -70,6 +70,13 @@ class DownloadQueueManager(private val context: Context) {
         _queue.value = _queue.value.filter { it.id != id }
     }
 
+    fun retryItem(id: String, apiKey: String? = null) {
+        updateItem(id) {
+            it.copy(status = DownloadStatus.PENDING, errorMessage = null, progressPercent = 0)
+        }
+        triggerQueueProcessing(apiKey)
+    }
+
     fun clearCompleted() {
         _queue.value = _queue.value.filter { it.status != DownloadStatus.COMPLETED }
     }
