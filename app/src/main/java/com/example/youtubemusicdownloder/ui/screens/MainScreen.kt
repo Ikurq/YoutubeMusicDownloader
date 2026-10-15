@@ -254,6 +254,9 @@ fun MainScreen(
                                 if (!isShuffle) viewModel.toggleShuffle()
                                 viewModel.playTrack(queue.random(), queue)
                             }
+                        },
+                        onImportLocalFiles = { uris ->
+                            viewModel.importLocalAudioFiles(context, uris)
                         }
                     )
                 }

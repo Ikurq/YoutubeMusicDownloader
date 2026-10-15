@@ -1,5 +1,8 @@
 package com.example.youtubemusicdownloder.ui.screens
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,7 +14,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
@@ -28,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.youtubemusicdownloder.model.Track
@@ -42,15 +48,26 @@ fun LibraryScreen(
     onAddToPlaylistClick: (track: Track) -> Unit,
     onDownloadClick: (track: Track) -> Unit,
     onDeleteClick: (trackId: String) -> Unit,
-    onShuffleAllClick: (tracks: List<Track>) -> Unit
+    onShuffleAllClick: (tracks: List<Track>) -> Unit,
+    onImportLocalFiles: (uris: List<Uri>) -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
+    val context = LocalContext.current
+
+    val audioPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) {
+            onImportLocalFiles(uris)
+        }
+    }
 
     val filteredTracks = remember(tracks, searchQuery) {
         if (searchQuery.isBlank()) tracks
         else tracks.filter {
             it.title.contains(searchQuery, ignoreCase = true) ||
-                    it.artist.contains(searchQuery, ignoreCase = true)
+                    it.artist.contains(searchQuery, ignoreCase = true) ||
+                    it.album.contains(searchQuery, ignoreCase = true)
         }
     }
 
@@ -59,18 +76,40 @@ fun LibraryScreen(
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        Text(
-            text = "楽曲ライブラリ (${tracks.size} 曲)",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = 12.dp)
-        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "楽曲ライブラリ (${tracks.size} 曲)",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "ダウンロード済み楽曲 & ローカルファイル",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            OutlinedButton(
+                onClick = { audioPickerLauncher.launch("audio/*") },
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(Icons.Default.FolderOpen, contentDescription = null)
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("端末から追加", fontWeight = FontWeight.Bold)
+            }
+        }
 
         // Search Bar
         OutlinedTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
-            label = { Text("楽曲を検索") },
+            label = { Text("ライブラリ内を検索") },
             leadingIcon = {
                 Icon(
                     imageVector = Icons.Default.Search,
@@ -78,7 +117,8 @@ fun LibraryScreen(
                 )
             },
             singleLine = true,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp)
         )
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -94,7 +134,8 @@ fun LibraryScreen(
                     }
                 },
                 enabled = filteredTracks.isNotEmpty(),
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp)
             ) {
                 Icon(Icons.Default.PlayArrow, contentDescription = null)
                 Spacer(modifier = Modifier.width(6.dp))
@@ -110,7 +151,8 @@ fun LibraryScreen(
                     }
                 },
                 enabled = filteredTracks.isNotEmpty(),
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp)
             ) {
                 Icon(Icons.Default.Shuffle, contentDescription = null)
                 Spacer(modifier = Modifier.width(6.dp))
@@ -126,7 +168,7 @@ fun LibraryScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = if (searchQuery.isBlank()) "ライブラリに楽曲がありません。\n「URL検索」タブから追加してください。" else "検索条件に一致する楽曲がありません。",
+                    text = if (searchQuery.isBlank()) "ライブラリに楽曲がありません。\n「検索 & DL」タブから保存、または右上の「端末から追加」をご利用ください。" else "検索条件に一致する楽曲がありません。",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

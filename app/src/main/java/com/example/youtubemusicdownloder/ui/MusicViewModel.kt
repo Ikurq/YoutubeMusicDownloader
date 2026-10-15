@@ -2,8 +2,10 @@ package com.example.youtubemusicdownloder.ui
 
 import android.app.Application
 import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.youtubemusicdownloder.data.LocalAudioImporter
 import com.example.youtubemusicdownloder.data.MusicRepository
 import com.example.youtubemusicdownloder.data.ReleaseInfo
 import com.example.youtubemusicdownloder.data.SearchResultItem
@@ -74,6 +76,35 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         _tracks.value = repository.loadTracks()
         _playlists.value = repository.loadPlaylists()
         _apiKey.value = repository.getApiKey()
+    }
+
+    fun importLocalAudioFiles(context: Context, uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        viewModelScope.launch {
+            _isDownloading.value = true
+            _statusMessage.value = "${uris.size}件のローカルファイルを読み込み中..."
+            var importedCount = 0
+            val newTracks = mutableListOf<Track>()
+
+            for (uri in uris) {
+                val track = LocalAudioImporter.importAudioFromUri(context, uri)
+                if (track != null) {
+                    newTracks.add(track)
+                    importedCount++
+                }
+            }
+
+            if (newTracks.isNotEmpty()) {
+                val currentList = _tracks.value.toMutableList()
+                currentList.addAll(0, newTracks)
+                _tracks.value = currentList
+                repository.saveTracks(currentList)
+                _statusMessage.value = "${importedCount}件のローカル楽曲を追加しました！"
+            } else {
+                _statusMessage.value = "ローカルファイルの読み込みに失敗しました"
+            }
+            _isDownloading.value = false
+        }
     }
 
     fun checkForUpdates(silent: Boolean = false) {
