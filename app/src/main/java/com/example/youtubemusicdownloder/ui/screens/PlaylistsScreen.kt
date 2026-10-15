@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -15,9 +16,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -48,6 +51,7 @@ fun PlaylistsScreen(
     isPlaying: Boolean,
     downloadingTrackIds: Set<String> = emptySet(),
     onCreatePlaylist: (name: String) -> Unit,
+    onGenerateAiPlaylists: () -> Unit,
     onDeletePlaylist: (playlistId: String) -> Unit,
     onPlayPlaylist: (playlist: Playlist, shuffle: Boolean) -> Unit,
     onPlayTrack: (track: Track, playlistTracks: List<Track>) -> Unit,
@@ -183,12 +187,39 @@ fun PlaylistsScreen(
                 Column(
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    Text(
-                        text = "プレイリスト一覧",
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(16.dp)
-                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "プレイリスト一覧",
+                                style = MaterialTheme.typography.headlineMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "手動作成 & Gemini AI 自動作成",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        Button(
+                            onClick = onGenerateAiPlaylists,
+                            enabled = allTracks.isNotEmpty(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        ) {
+                            Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("✨ AI 自動作成", fontWeight = FontWeight.Bold)
+                        }
+                    }
 
                     if (playlists.isEmpty()) {
                         Box(
@@ -196,7 +227,7 @@ fun PlaylistsScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = "プレイリストがありません。\n右下の＋ボタンから作成できます。",
+                                text = "プレイリストがありません。\n右上の「✨ AI 自動作成」または右下の＋ボタンから作成できます。",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

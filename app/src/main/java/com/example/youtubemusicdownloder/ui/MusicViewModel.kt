@@ -5,6 +5,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.youtubemusicdownloder.data.GeminiMetadataCleaner
 import com.example.youtubemusicdownloder.data.LocalAudioImporter
 import com.example.youtubemusicdownloder.data.MusicRepository
 import com.example.youtubemusicdownloder.data.ReleaseInfo
@@ -82,6 +83,29 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         _tracks.value = repository.loadTracks()
         _playlists.value = repository.loadPlaylists()
         _apiKey.value = repository.getApiKey()
+    }
+
+    fun generateAiPlaylists() {
+        val currentTracks = _tracks.value
+        if (currentTracks.isEmpty()) return
+
+        viewModelScope.launch {
+            _statusMessage.value = "✨ Gemini AIが楽曲を分析してプレイリストを自動作成中..."
+            try {
+                val aiPlaylists = GeminiMetadataCleaner.generateSmartPlaylists(currentTracks, _apiKey.value)
+                if (aiPlaylists.isNotEmpty()) {
+                    val merged = (_playlists.value + aiPlaylists).distinctBy { it.name }
+                    _playlists.value = merged
+                    repository.savePlaylists(merged)
+                    _statusMessage.value = "✨ Gemini AIが${aiPlaylists.size}個のプレイリストを自動作成しました！"
+                } else {
+                    _statusMessage.value = "プレイリスト作成対象の楽曲が不足しています"
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                _statusMessage.value = "AIプレイリスト作成エラー: ${e.message}"
+            }
+        }
     }
 
     fun fetchRelatedTracks(track: Track) {
@@ -168,7 +192,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     fun saveApiKey(key: String) {
         repository.saveApiKey(key)
         _apiKey.value = key.trim()
-        _statusMessage.value = "Google APIキーを保存しました"
+        _statusMessage.value = "Google / Gemini APIキーを保存しました"
     }
 
     fun clearStatusMessage() {
@@ -206,7 +230,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             _isDownloading.value = true
-            _statusMessage.value = "楽曲情報およびローカルダウンロードを処理中..."
+            _statusMessage.value = "✨ Gemini AIが楽曲メタデータ・公式アルバム情報を照会中..."
             try {
                 var newTrack = YoutubeDownloader.parseTrackFromUrl(urlInput, customTitle, _apiKey.value)
 

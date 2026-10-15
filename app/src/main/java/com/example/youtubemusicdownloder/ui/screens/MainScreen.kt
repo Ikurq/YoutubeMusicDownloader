@@ -232,6 +232,7 @@ fun MainScreen(
                         isPlaying = isPlaying,
                         downloadingTrackIds = downloadingTrackIds,
                         onCreatePlaylist = { viewModel.createPlaylist(it) },
+                        onGenerateAiPlaylists = { viewModel.generateAiPlaylists() },
                         onDeletePlaylist = { viewModel.deletePlaylist(it) },
                         onPlayPlaylist = { playlist, shuffle ->
                             viewModel.playPlaylist(playlist, shuffle)
