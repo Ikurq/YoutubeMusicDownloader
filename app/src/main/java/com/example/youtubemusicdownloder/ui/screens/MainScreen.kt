@@ -8,12 +8,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.PlaylistPlay
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -45,6 +48,7 @@ import com.example.youtubemusicdownloder.model.Track
 import com.example.youtubemusicdownloder.ui.MusicViewModel
 import com.example.youtubemusicdownloder.ui.components.AddTrackToPlaylistDialog
 import com.example.youtubemusicdownloder.ui.components.MiniPlayer
+import com.example.youtubemusicdownloder.ui.components.UpdateDialog
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -76,6 +80,12 @@ fun MainScreen(
     val apiKey by viewModel.apiKey.collectAsState()
     val searchResults by viewModel.searchResults.collectAsState()
     val isSearching by viewModel.isSearching.collectAsState()
+
+    val availableUpdate by viewModel.availableUpdate.collectAsState()
+    val isCheckingUpdate by viewModel.isCheckingUpdate.collectAsState()
+    val isDownloadingUpdate by viewModel.isDownloadingUpdate.collectAsState()
+    val downloadProgress by viewModel.downloadProgress.collectAsState()
+
     val currentTrack by viewModel.currentTrack.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
     val currentPositionMs by viewModel.currentPositionMs.collectAsState()
@@ -120,6 +130,16 @@ fun MainScreen(
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
+                    },
+                    actions = {
+                        IconButton(onClick = { viewModel.checkForUpdates(silent = false) }) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "更新確認",
+                                tint = if (isCheckingUpdate) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = Color.White,
@@ -239,6 +259,21 @@ fun MainScreen(
                 }
             }
         }
+    }
+
+    // In-App Update Dialog
+    availableUpdate?.let { releaseInfo ->
+        UpdateDialog(
+            releaseInfo = releaseInfo,
+            isDownloading = isDownloadingUpdate,
+            progress = downloadProgress,
+            onUpdateClick = {
+                viewModel.downloadAndInstallUpdate(context, releaseInfo)
+            },
+            onDismiss = {
+                viewModel.dismissUpdateDialog()
+            }
+        )
     }
 
     trackToAddToPlaylist?.let { track ->

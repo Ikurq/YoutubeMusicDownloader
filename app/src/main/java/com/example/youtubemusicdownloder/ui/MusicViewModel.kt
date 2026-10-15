@@ -1,10 +1,13 @@
 package com.example.youtubemusicdownloder.ui
 
 import android.app.Application
+import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.youtubemusicdownloder.data.MusicRepository
+import com.example.youtubemusicdownloder.data.ReleaseInfo
 import com.example.youtubemusicdownloder.data.SearchResultItem
+import com.example.youtubemusicdownloder.data.UpdateManager
 import com.example.youtubemusicdownloder.data.YoutubeDownloader
 import com.example.youtubemusicdownloder.data.YoutubeSearchService
 import com.example.youtubemusicdownloder.media.MusicPlayerManager
@@ -36,6 +39,19 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private val _isSearching = MutableStateFlow(false)
     val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
 
+    // Update state
+    private val _availableUpdate = MutableStateFlow<ReleaseInfo?>(null)
+    val availableUpdate: StateFlow<ReleaseInfo?> = _availableUpdate.asStateFlow()
+
+    private val _isCheckingUpdate = MutableStateFlow(false)
+    val isCheckingUpdate: StateFlow<Boolean> = _isCheckingUpdate.asStateFlow()
+
+    private val _isDownloadingUpdate = MutableStateFlow(false)
+    val isDownloadingUpdate: StateFlow<Boolean> = _isDownloadingUpdate.asStateFlow()
+
+    private val _downloadProgress = MutableStateFlow(0)
+    val downloadProgress: StateFlow<Int> = _downloadProgress.asStateFlow()
+
     val currentTrack: StateFlow<Track?> = playerManager.currentTrack
     val isPlaying: StateFlow<Boolean> = playerManager.isPlaying
     val currentPositionMs: StateFlow<Long> = playerManager.currentPositionMs
@@ -51,12 +67,57 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         loadData()
+        checkForUpdates(silent = true)
     }
 
     private fun loadData() {
         _tracks.value = repository.loadTracks()
         _playlists.value = repository.loadPlaylists()
         _apiKey.value = repository.getApiKey()
+    }
+
+    fun checkForUpdates(silent: Boolean = false) {
+        viewModelScope.launch {
+            _isCheckingUpdate.value = true
+            if (!silent) _statusMessage.value = "アプリアップデートを確認中..."
+            try {
+                val update = UpdateManager.checkForUpdates()
+                if (update != null) {
+                    _availableUpdate.value = update
+                    _statusMessage.value = "新しいバージョン（${update.tagName}）が見つかりました！"
+                } else if (!silent) {
+                    _statusMessage.value = "お使いのアプリは最新バージョンです（${UpdateManager.CURRENT_VERSION}）"
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                if (!silent) _statusMessage.value = "アップデート確認エラー"
+            } finally {
+                _isCheckingUpdate.value = false
+            }
+        }
+    }
+
+    fun downloadAndInstallUpdate(context: Context, releaseInfo: ReleaseInfo) {
+        viewModelScope.launch {
+            _isDownloadingUpdate.value = true
+            _downloadProgress.value = 0
+            _statusMessage.value = "アップデートファイルをダウンロード中..."
+            try {
+                UpdateManager.downloadAndInstallApk(context, releaseInfo.apkDownloadUrl) { percent ->
+                    _downloadProgress.value = percent
+                }
+                _statusMessage.value = "ダウンロード完了。インストール画面を開きます..."
+            } catch (e: Exception) {
+                e.printStackTrace()
+                _statusMessage.value = "アップデート失敗: ${e.message}"
+            } finally {
+                _isDownloadingUpdate.value = false
+            }
+        }
+    }
+
+    fun dismissUpdateDialog() {
+        _availableUpdate.value = null
     }
 
     fun saveApiKey(key: String) {
