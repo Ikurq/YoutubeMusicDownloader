@@ -103,7 +103,7 @@ fun UrlSearchScreen(
                     color = MaterialTheme.colorScheme.onBackground
                 )
                 Text(
-                    text = "YouTubeからキーワード検索 または URLを貼り付けて保存できます",
+                    text = "YouTubeから高精度な楽曲検索・保存が可能です",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -124,7 +124,7 @@ fun UrlSearchScreen(
             }
         }
 
-        // Google API Key Modal / Card
+        // Google API Key Card
         AnimatedVisibility(visible = showApiKeySettings) {
             Card(
                 modifier = Modifier
@@ -141,7 +141,7 @@ fun UrlSearchScreen(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "APIキーを設定すると高精度の公式楽曲検索・公式ユニット名抽出が利用可能です。",
+                        text = "APIキーを設定すると公式データで検索・Gemini楽曲整形が行えます。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(vertical = 4.dp)
@@ -172,7 +172,7 @@ fun UrlSearchScreen(
             }
         }
 
-        // Search Input Bar
+        // Search Input Card
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
@@ -209,7 +209,7 @@ fun UrlSearchScreen(
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                     keyboardActions = KeyboardActions(onSearch = {
                         keyboardController?.hide()
-                        if (videoId == null) {
+                        if (videoId == null && searchInput.isNotBlank()) {
                             onSearch(searchInput)
                         }
                     }),
@@ -235,7 +235,7 @@ fun UrlSearchScreen(
                             colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary)
                         )
                         Text(
-                            text = "ローカル保存 (オフライン再生可能)",
+                            text = "ローカル保存 (オフライン再生)",
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.Medium
                         )
@@ -267,7 +267,7 @@ fun UrlSearchScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Direct URL Input Actions or Preview Card
+        // Direct URL Input Card
         if (videoId != null) {
             Card(
                 modifier = Modifier
@@ -320,7 +320,7 @@ fun UrlSearchScreen(
                         value = customTitle,
                         onValueChange = { customTitle = it },
                         label = { Text("カスタムタイトル (任意)") },
-                        placeholder = { Text("自動生成タイトルを上書きできます") },
+                        placeholder = { Text("指定しない場合は自動整形") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(10.dp)
@@ -347,7 +347,7 @@ fun UrlSearchScreen(
                                 strokeWidth = 2.dp
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("ダウンロード・解析中...")
+                            Text("解析・ダウンロード中...")
                         } else {
                             Icon(Icons.Default.Download, contentDescription = null)
                             Spacer(modifier = Modifier.width(8.dp))
@@ -358,14 +358,25 @@ fun UrlSearchScreen(
             }
         }
 
-        // Search Results List
+        // Search Results Section
         if (searchResults.isNotEmpty()) {
-            Text(
-                text = "検索結果 (${searchResults.size}件)",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(vertical = 8.dp)
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "検索結果 (${searchResults.size}件)",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+
+                TextButton(onClick = onClearSearch) {
+                    Text("クリア")
+                }
+            }
 
             LazyColumn(
                 modifier = Modifier.weight(1f)
@@ -385,15 +396,34 @@ fun UrlSearchScreen(
                                 .padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            AsyncImage(
-                                model = item.thumbnailUrl,
-                                contentDescription = item.title,
-                                modifier = Modifier
-                                    .width(80.dp)
-                                    .aspectRatio(16f / 9f)
-                                    .clip(RoundedCornerShape(8.dp)),
-                                contentScale = ContentScale.Crop
-                            )
+                            Box {
+                                AsyncImage(
+                                    model = item.thumbnailUrl,
+                                    contentDescription = item.title,
+                                    modifier = Modifier
+                                        .width(90.dp)
+                                        .aspectRatio(16f / 9f)
+                                        .clip(RoundedCornerShape(8.dp)),
+                                    contentScale = ContentScale.Crop
+                                )
+
+                                if (item.durationText.isNotBlank()) {
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = Color.Black.copy(alpha = 0.75f),
+                                        modifier = Modifier
+                                            .align(Alignment.BottomEnd)
+                                            .padding(4.dp)
+                                    ) {
+                                        Text(
+                                            text = item.durationText,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = Color.White,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                        )
+                                    }
+                                }
+                            }
 
                             Spacer(modifier = Modifier.width(12.dp))
 
@@ -439,14 +469,14 @@ fun UrlSearchScreen(
                 }
             }
         } else if (videoId == null && searchInput.isBlank()) {
-            // Initial Suggestions / Quick Links
+            // Sample Keywords
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 16.dp)
             ) {
                 Text(
-                    text = "クイック検索サンプル",
+                    text = "人気キーワードで検索",
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -484,7 +514,7 @@ fun UrlSearchScreen(
                         },
                         shape = RoundedCornerShape(20.dp)
                     ) {
-                        Text("Official髭男dism")
+                        Text("髭男")
                     }
                 }
             }
