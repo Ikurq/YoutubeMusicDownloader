@@ -17,6 +17,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -33,8 +34,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -71,6 +74,8 @@ fun MainScreen(
     val tracks by viewModel.tracks.collectAsState()
     val playlists by viewModel.playlists.collectAsState()
     val apiKey by viewModel.apiKey.collectAsState()
+    val searchResults by viewModel.searchResults.collectAsState()
+    val isSearching by viewModel.isSearching.collectAsState()
     val currentTrack by viewModel.currentTrack.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
     val currentPositionMs by viewModel.currentPositionMs.collectAsState()
@@ -112,18 +117,18 @@ fun MainScreen(
                     title = {
                         Text(
                             text = "YouTube Music Downloader",
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        containerColor = Color.White,
+                        titleContentColor = MaterialTheme.colorScheme.onSurface
                     )
                 )
             },
             bottomBar = {
                 Column {
-                    // Mini Player
                     currentTrack?.let { track ->
                         MiniPlayer(
                             track = track,
@@ -136,25 +141,42 @@ fun MainScreen(
                         )
                     }
 
-                    // Navigation Bar
-                    NavigationBar {
+                    NavigationBar(
+                        containerColor = Color.White,
+                        tonalElevation = 8.dp
+                    ) {
                         NavigationBarItem(
                             selected = selectedTab == 0,
                             onClick = { selectedTab = 0 },
                             icon = { Icon(Icons.Default.Search, contentDescription = null) },
-                            label = { Text("URL検索") }
+                            label = { Text("検索 & DL") },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                selectedTextColor = MaterialTheme.colorScheme.primary,
+                                indicatorColor = MaterialTheme.colorScheme.primaryContainer
+                            )
                         )
                         NavigationBarItem(
                             selected = selectedTab == 1,
                             onClick = { selectedTab = 1 },
                             icon = { Icon(Icons.Default.PlaylistPlay, contentDescription = null) },
-                            label = { Text("プレイリスト") }
+                            label = { Text("プレイリスト") },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                selectedTextColor = MaterialTheme.colorScheme.primary,
+                                indicatorColor = MaterialTheme.colorScheme.primaryContainer
+                            )
                         )
                         NavigationBarItem(
                             selected = selectedTab == 2,
                             onClick = { selectedTab = 2 },
                             icon = { Icon(Icons.Default.LibraryMusic, contentDescription = null) },
-                            label = { Text("ライブラリ") }
+                            label = { Text("ライブラリ") },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                selectedTextColor = MaterialTheme.colorScheme.primary,
+                                indicatorColor = MaterialTheme.colorScheme.primaryContainer
+                            )
                         )
                     }
                 }
@@ -169,7 +191,11 @@ fun MainScreen(
                 when (selectedTab) {
                     0 -> UrlSearchScreen(
                         apiKey = apiKey,
+                        searchResults = searchResults,
+                        isSearching = isSearching,
                         isDownloading = isDownloading,
+                        onSearch = { viewModel.searchYouTube(it) },
+                        onClearSearch = { viewModel.clearSearchResults() },
                         onSaveApiKey = { viewModel.saveApiKey(it) },
                         onAddTrack = { url, title, download ->
                             viewModel.parseAndAddTrack(url, title, download)

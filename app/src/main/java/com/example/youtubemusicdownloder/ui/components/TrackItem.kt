@@ -16,6 +16,8 @@ import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlaylistAdd
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -31,7 +33,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -48,16 +52,21 @@ fun TrackItem(
 ) {
     var showMenu by remember { mutableStateOf(false) }
 
-    Surface(
+    Card(
         modifier = Modifier
             .fillMaxWidth()
+            .padding(vertical = 4.dp, horizontal = 2.dp)
             .clickable { onTrackClick() },
-        color = if (isPlaying) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surface
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isPlaying) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else Color.White
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (track.thumbnailUrl.isNotBlank()) {
@@ -66,14 +75,14 @@ fun TrackItem(
                     contentDescription = track.title,
                     modifier = Modifier
                         .size(52.dp)
-                        .clip(RoundedCornerShape(8.dp)),
+                        .clip(RoundedCornerShape(10.dp)),
                     contentScale = ContentScale.Crop
                 )
             } else {
                 Surface(
                     modifier = Modifier
                         .size(52.dp)
-                        .clip(RoundedCornerShape(8.dp)),
+                        .clip(RoundedCornerShape(10.dp)),
                     color = MaterialTheme.colorScheme.secondaryContainer
                 ) {
                     Icon(
@@ -93,6 +102,7 @@ fun TrackItem(
                 Text(
                     text = track.title,
                     style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Bold,
                     color = if (isPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -111,7 +121,9 @@ fun TrackItem(
                     imageVector = Icons.Default.DownloadDone,
                     contentDescription = "Downloaded",
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier
+                        .size(22.dp)
+                        .padding(end = 4.dp)
                 )
             } else if (onDownloadClick != null) {
                 IconButton(onClick = onDownloadClick) {
@@ -127,7 +139,8 @@ fun TrackItem(
                 IconButton(onClick = { showMenu = true }) {
                     Icon(
                         imageVector = Icons.Default.MoreVert,
-                        contentDescription = "Options"
+                        contentDescription = "Options",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 

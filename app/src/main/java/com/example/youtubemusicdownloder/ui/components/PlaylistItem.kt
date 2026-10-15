@@ -25,6 +25,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.youtubemusicdownloder.model.Playlist
@@ -40,34 +42,33 @@ fun PlaylistItem(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .padding(vertical = 6.dp)
             .clickable { onPlaylistClick() },
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        ),
-        shape = RoundedCornerShape(12.dp)
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        shape = RoundedCornerShape(16.dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
+                .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Surface(
                 modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(8.dp)),
+                    .size(52.dp)
+                    .clip(RoundedCornerShape(12.dp)),
                 color = MaterialTheme.colorScheme.primaryContainer
             ) {
                 Icon(
                     imageVector = Icons.Default.PlaylistPlay,
                     contentDescription = null,
-                    modifier = Modifier.padding(10.dp),
+                    modifier = Modifier.padding(12.dp),
                     tint = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             }
 
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(14.dp))
 
             Column(
                 modifier = Modifier.weight(1f)
@@ -75,6 +76,7 @@ fun PlaylistItem(
                 Text(
                     text = playlist.name,
                     style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -96,7 +98,7 @@ fun PlaylistItem(
             IconButton(onClick = onShuffleClick) {
                 Icon(
                     imageVector = Icons.Default.Shuffle,
-                    contentDescription = "プレイリスト内ランダム再生",
+                    contentDescription = "ランダム再生",
                     tint = MaterialTheme.colorScheme.secondary
                 )
             }

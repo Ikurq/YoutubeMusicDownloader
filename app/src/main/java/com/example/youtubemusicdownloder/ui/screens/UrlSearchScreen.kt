@@ -1,6 +1,9 @@
 package com.example.youtubemusicdownloder.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -9,26 +12,34 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Key
-import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -39,81 +50,98 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.example.youtubemusicdownloder.data.SearchResultItem
 import com.example.youtubemusicdownloder.data.YoutubeDownloader
 
 @Composable
 fun UrlSearchScreen(
     apiKey: String,
+    searchResults: List<SearchResultItem>,
+    isSearching: Boolean,
     isDownloading: Boolean,
+    onSearch: (query: String) -> Unit,
+    onClearSearch: () -> Unit,
     onSaveApiKey: (key: String) -> Unit,
     onAddTrack: (url: String, customTitle: String?, autoDownload: Boolean) -> Unit
 ) {
-    var urlInput by remember { mutableStateOf("") }
+    var searchInput by remember { mutableStateOf("") }
     var customTitle by remember { mutableStateOf("") }
     var autoDownload by remember { mutableStateOf(true) }
     var showApiKeySettings by remember { mutableStateOf(false) }
     var inputApiKey by remember(apiKey) { mutableStateOf(apiKey) }
 
-    val videoId = remember(urlInput) { YoutubeDownloader.extractVideoId(urlInput) }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val videoId = remember(searchInput) { YoutubeDownloader.extractVideoId(searchInput) }
     val previewThumbnail = remember(videoId) { videoId?.let { YoutubeDownloader.getThumbnailUrl(it) } }
-
-    val scrollState = rememberScrollState()
 
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
             .padding(16.dp)
-            .verticalScroll(scrollState)
     ) {
+        // Top Bar Header
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "YouTube URL検索 & DL",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
+                    text = "楽曲検索 & DL",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground
                 )
                 Text(
-                    text = "楽曲名・ユニット・アルバム情報を綺麗に解析します",
+                    text = "YouTubeからキーワード検索 または URLを貼り付けて保存できます",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
 
-            IconButton(onClick = { showApiKeySettings = !showApiKeySettings }) {
+            Surface(
+                onClick = { showApiKeySettings = !showApiKeySettings },
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surface,
+                shadowElevation = 2.dp
+            ) {
                 Icon(
                     imageVector = Icons.Default.Settings,
-                    contentDescription = "Google API設定",
-                    tint = if (apiKey.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                    contentDescription = "API設定",
+                    tint = if (apiKey.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(10.dp)
                 )
             }
         }
 
-        // Google API Key Section
+        // Google API Key Modal / Card
         AnimatedVisibility(visible = showApiKeySettings) {
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 12.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                )
+                    .padding(bottom = 12.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
             ) {
-                Column(modifier = Modifier.padding(12.dp)) {
+                Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = "Google Data API v3 キー設定",
-                        style = MaterialTheme.typography.titleSmall,
+                        text = "Google Data API v3 設定",
+                        style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "Google Cloud Consoleで取得したYouTube Data API v3キーを設定すると、公式のユニット名・楽曲名・アルバム情報を自動抽出できます。",
+                        text = "APIキーを設定すると高精度の公式楽曲検索・公式ユニット名抽出が利用可能です。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(vertical = 4.dp)
@@ -125,7 +153,8 @@ fun UrlSearchScreen(
                         label = { Text("Google API キー") },
                         leadingIcon = { Icon(Icons.Default.Key, contentDescription = null) },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
                     )
 
                     Spacer(modifier = Modifier.height(8.dp))
@@ -137,7 +166,100 @@ fun UrlSearchScreen(
                         },
                         modifier = Modifier.align(Alignment.End)
                     ) {
-                        Text("APIキーを保存")
+                        Text("保存", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        // Search Input Bar
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                OutlinedTextField(
+                    value = searchInput,
+                    onValueChange = {
+                        searchInput = it
+                        if (it.isBlank()) onClearSearch()
+                    },
+                    label = { Text("楽曲名、アーティスト名、または YouTube URL") },
+                    placeholder = { Text("例: YOASOBI アイドル / https://...") },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    },
+                    trailingIcon = {
+                        if (searchInput.isNotBlank()) {
+                            IconButton(onClick = {
+                                searchInput = ""
+                                onClearSearch()
+                            }) {
+                                Icon(Icons.Default.Clear, contentDescription = "クリア")
+                            }
+                        }
+                    },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = {
+                        keyboardController?.hide()
+                        if (videoId == null) {
+                            onSearch(searchInput)
+                        }
+                    }),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                        focusedContainerColor = Color.White
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = autoDownload,
+                            onCheckedChange = { autoDownload = it },
+                            colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary)
+                        )
+                        Text(
+                            text = "ローカル保存 (オフライン再生可能)",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+
+                    if (videoId == null && searchInput.isNotBlank()) {
+                        Button(
+                            onClick = {
+                                keyboardController?.hide()
+                                onSearch(searchInput)
+                            },
+                            enabled = !isSearching,
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            if (isSearching) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    color = Color.White,
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Text("検索")
+                            }
+                        }
                     }
                 }
             }
@@ -145,170 +267,226 @@ fun UrlSearchScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // URL Field
-        OutlinedTextField(
-            value = urlInput,
-            onValueChange = { urlInput = it },
-            label = { Text("YouTube URL または 動画ID") },
-            placeholder = { Text("https://www.youtube.com/watch?v=...") },
-            leadingIcon = {
-                Icon(
-                    imageVector = Icons.Default.Link,
-                    contentDescription = null
-                )
-            },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Quick Sample Links
-        Text(
-            text = "サンプルURLで試す:",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.primary
-        )
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 4.dp)
-        ) {
-            OutlinedButton(
-                onClick = { urlInput = "https://www.youtube.com/watch?v=dQw4w9WgXcQ" },
-                modifier = Modifier.padding(end = 8.dp)
-            ) {
-                Text("サンプル 1", style = MaterialTheme.typography.labelSmall)
-            }
-
-            OutlinedButton(
-                onClick = { urlInput = "https://www.youtube.com/watch?v=kJQP7kiw5Fk" }
-            ) {
-                Text("サンプル 2", style = MaterialTheme.typography.labelSmall)
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Custom Title
-        OutlinedTextField(
-            value = customTitle,
-            onValueChange = { customTitle = it },
-            label = { Text("タイトル手動指定 (任意)") },
-            placeholder = { Text("未指定時は【MV】等のタグを除去した楽曲名のみ自動設定") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Download Checkbox
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Checkbox(
-                checked = autoDownload,
-                onCheckedChange = { autoDownload = it }
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-            Column {
-                Text(
-                    text = "ローカル端末にファイルを保存する",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Text(
-                    text = "オフライン環境・バックグラウンド再生が可能です",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Live Preview Card
-        if (videoId != null || previewThumbnail != null) {
+        // Direct URL Input Actions or Preview Card
+        if (videoId != null) {
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 16.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f)
-                )
+                    .padding(bottom = 12.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (!previewThumbnail.isNullOrEmpty()) {
-                        AsyncImage(
-                            model = previewThumbnail,
-                            contentDescription = "Preview",
-                            modifier = Modifier
-                                .width(90.dp)
-                                .aspectRatio(16f / 9f)
-                                .clip(RoundedCornerShape(8.dp)),
-                            contentScale = ContentScale.Crop
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.MusicNote,
-                            contentDescription = null,
-                            modifier = Modifier.padding(12.dp)
-                        )
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (!previewThumbnail.isNullOrEmpty()) {
+                            AsyncImage(
+                                model = previewThumbnail,
+                                contentDescription = "Preview",
+                                modifier = Modifier
+                                    .width(100.dp)
+                                    .aspectRatio(16f / 9f)
+                                    .clip(RoundedCornerShape(8.dp)),
+                                contentScale = ContentScale.Crop
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.MusicNote,
+                                contentDescription = null,
+                                modifier = Modifier.padding(12.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "YouTube URL 検出",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "ID: $videoId",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
 
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
-                    Column {
-                        Text(
-                            text = "YouTube 検出完了",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "ID: $videoId",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    OutlinedTextField(
+                        value = customTitle,
+                        onValueChange = { customTitle = it },
+                        label = { Text("カスタムタイトル (任意)") },
+                        placeholder = { Text("自動生成タイトルを上書きできます") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Button(
+                        onClick = {
+                            onAddTrack(searchInput, customTitle.ifBlank { null }, autoDownload)
+                            searchInput = ""
+                            customTitle = ""
+                        },
+                        enabled = !isDownloading,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        if (isDownloading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                color = Color.White,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("ダウンロード・解析中...")
+                        } else {
+                            Icon(Icons.Default.Download, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("ライブラリに追加・保存", fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
         }
 
-        // Add / Download Button
-        Button(
-            onClick = {
-                onAddTrack(urlInput, customTitle.ifBlank { null }, autoDownload)
-                urlInput = ""
-                customTitle = ""
-            },
-            enabled = urlInput.isNotBlank() && !isDownloading,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp)
-        ) {
-            if (isDownloading) {
-                CircularProgressIndicator(
-                    modifier = Modifier
-                        .height(24.dp)
-                        .width(24.dp),
-                    color = MaterialTheme.colorScheme.onPrimary,
-                    strokeWidth = 2.dp
+        // Search Results List
+        if (searchResults.isNotEmpty()) {
+            Text(
+                text = "検索結果 (${searchResults.size}件)",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(vertical = 8.dp)
+            )
+
+            LazyColumn(
+                modifier = Modifier.weight(1f)
+            ) {
+                items(searchResults) { item ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            AsyncImage(
+                                model = item.thumbnailUrl,
+                                contentDescription = item.title,
+                                modifier = Modifier
+                                    .width(80.dp)
+                                    .aspectRatio(16f / 9f)
+                                    .clip(RoundedCornerShape(8.dp)),
+                                contentScale = ContentScale.Crop
+                            )
+
+                            Spacer(modifier = Modifier.width(12.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = item.title,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = item.channelTitle,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            Button(
+                                onClick = {
+                                    onAddTrack(item.url, item.title, autoDownload)
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            ) {
+                                Icon(
+                                    Icons.Default.Download,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("追加", style = MaterialTheme.typography.labelMedium)
+                            }
+                        }
+                    }
+                }
+            }
+        } else if (videoId == null && searchInput.isBlank()) {
+            // Initial Suggestions / Quick Links
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 16.dp)
+            ) {
+                Text(
+                    text = "クイック検索サンプル",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(modifier = Modifier.width(12.dp))
-                Text("処理中...")
-            } else {
-                Icon(
-                    imageVector = Icons.Default.Download,
-                    contentDescription = null
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("楽曲を追加・保存する", style = MaterialTheme.typography.titleMedium)
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            searchInput = "YOASOBI"
+                            onSearch("YOASOBI")
+                        },
+                        shape = RoundedCornerShape(20.dp)
+                    ) {
+                        Text("YOASOBI")
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            searchInput = "Ado"
+                            onSearch("Ado")
+                        },
+                        shape = RoundedCornerShape(20.dp)
+                    ) {
+                        Text("Ado")
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            searchInput = "Official髭男dism"
+                            onSearch("Official髭男dism")
+                        },
+                        shape = RoundedCornerShape(20.dp)
+                    ) {
+                        Text("Official髭男dism")
+                    }
+                }
             }
         }
     }

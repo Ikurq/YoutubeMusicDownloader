@@ -4,7 +4,9 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.youtubemusicdownloder.data.MusicRepository
+import com.example.youtubemusicdownloder.data.SearchResultItem
 import com.example.youtubemusicdownloder.data.YoutubeDownloader
+import com.example.youtubemusicdownloder.data.YoutubeSearchService
 import com.example.youtubemusicdownloder.media.MusicPlayerManager
 import com.example.youtubemusicdownloder.model.Playlist
 import com.example.youtubemusicdownloder.model.RepeatMode
@@ -27,6 +29,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _apiKey = MutableStateFlow("")
     val apiKey: StateFlow<String> = _apiKey.asStateFlow()
+
+    private val _searchResults = MutableStateFlow<List<SearchResultItem>>(emptyList())
+    val searchResults: StateFlow<List<SearchResultItem>> = _searchResults.asStateFlow()
+
+    private val _isSearching = MutableStateFlow(false)
+    val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
 
     val currentTrack: StateFlow<Track?> = playerManager.currentTrack
     val isPlaying: StateFlow<Boolean> = playerManager.isPlaying
@@ -59,6 +67,32 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearStatusMessage() {
         _statusMessage.value = null
+    }
+
+    fun searchYouTube(query: String) {
+        if (query.isBlank()) return
+        viewModelScope.launch {
+            _isSearching.value = true
+            _statusMessage.value = "YouTubeを検索中..."
+            try {
+                val results = YoutubeSearchService.searchVideos(query, _apiKey.value)
+                _searchResults.value = results
+                if (results.isEmpty()) {
+                    _statusMessage.value = "検索結果が見つかりませんでした"
+                } else {
+                    _statusMessage.value = "${results.size}件の楽曲が見つかりました"
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                _statusMessage.value = "検索エラー: ${e.message}"
+            } finally {
+                _isSearching.value = false
+            }
+        }
+    }
+
+    fun clearSearchResults() {
+        _searchResults.value = emptyList()
     }
 
     fun parseAndAddTrack(urlInput: String, customTitle: String? = null, downloadLocally: Boolean = true) {
