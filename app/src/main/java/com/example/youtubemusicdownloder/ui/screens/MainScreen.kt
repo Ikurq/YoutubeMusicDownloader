@@ -79,7 +79,9 @@ fun MainScreen(
     val playlists by viewModel.playlists.collectAsState()
     val apiKey by viewModel.apiKey.collectAsState()
     val searchResults by viewModel.searchResults.collectAsState()
+    val relatedTracks by viewModel.relatedTracks.collectAsState()
     val isSearching by viewModel.isSearching.collectAsState()
+    val downloadingTrackIds by viewModel.downloadingTrackIds.collectAsState()
 
     val availableUpdate by viewModel.availableUpdate.collectAsState()
     val isCheckingUpdate by viewModel.isCheckingUpdate.collectAsState()
@@ -112,12 +114,14 @@ fun MainScreen(
             durationMs = durationMs,
             repeatMode = repeatMode,
             isShuffle = isShuffle,
+            relatedTracks = relatedTracks,
             onPlayPauseClick = { viewModel.togglePlayPause() },
             onNextClick = { viewModel.nextTrack() },
             onPreviousClick = { viewModel.previousTrack() },
             onSeek = { viewModel.seekTo(it) },
             onToggleRepeat = { viewModel.toggleRepeatMode() },
             onToggleShuffle = { viewModel.toggleShuffle() },
+            onAddRelatedTrack = { url, title -> viewModel.parseAndAddTrack(url, title) },
             onCloseClick = { showPlayerSheet = false }
         )
     } else {
@@ -226,6 +230,7 @@ fun MainScreen(
                         allTracks = tracks,
                         currentTrack = currentTrack,
                         isPlaying = isPlaying,
+                        downloadingTrackIds = downloadingTrackIds,
                         onCreatePlaylist = { viewModel.createPlaylist(it) },
                         onDeletePlaylist = { viewModel.deletePlaylist(it) },
                         onPlayPlaylist = { playlist, shuffle ->
@@ -243,6 +248,7 @@ fun MainScreen(
                         tracks = tracks,
                         currentTrack = currentTrack,
                         isPlaying = isPlaying,
+                        downloadingTrackIds = downloadingTrackIds,
                         onTrackClick = { track, queue ->
                             viewModel.playTrack(track, queue)
                         },

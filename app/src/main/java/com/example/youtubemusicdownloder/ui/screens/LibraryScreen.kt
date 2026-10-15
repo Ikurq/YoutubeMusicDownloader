@@ -33,7 +33,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.youtubemusicdownloder.model.Track
@@ -44,6 +43,7 @@ fun LibraryScreen(
     tracks: List<Track>,
     currentTrack: Track?,
     isPlaying: Boolean,
+    downloadingTrackIds: Set<String> = emptySet(),
     onTrackClick: (track: Track, queue: List<Track>) -> Unit,
     onAddToPlaylistClick: (track: Track) -> Unit,
     onDownloadClick: (track: Track) -> Unit,
@@ -52,7 +52,6 @@ fun LibraryScreen(
     onImportLocalFiles: (uris: List<Uri>) -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
-    val context = LocalContext.current
 
     val audioPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetMultipleContents()
@@ -89,7 +88,7 @@ fun LibraryScreen(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "ダウンロード済み楽曲 & ローカルファイル",
+                    text = "保存済み楽曲 & ローカルファイル",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -179,6 +178,7 @@ fun LibraryScreen(
                     TrackItem(
                         track = track,
                         isPlaying = currentTrack?.id == track.id && isPlaying,
+                        isDownloading = downloadingTrackIds.contains(track.id),
                         onTrackClick = { onTrackClick(track, filteredTracks) },
                         onAddToPlaylistClick = { onAddToPlaylistClick(track) },
                         onDownloadClick = if (!track.isDownloaded) {

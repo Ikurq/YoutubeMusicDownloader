@@ -11,11 +11,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Button
 import androidx.compose.material3.FloatingActionButton
@@ -46,6 +46,7 @@ fun PlaylistsScreen(
     allTracks: List<Track>,
     currentTrack: Track?,
     isPlaying: Boolean,
+    downloadingTrackIds: Set<String> = emptySet(),
     onCreatePlaylist: (name: String) -> Unit,
     onDeletePlaylist: (playlistId: String) -> Unit,
     onPlayPlaylist: (playlist: Playlist, shuffle: Boolean) -> Unit,
@@ -63,7 +64,8 @@ fun PlaylistsScreen(
             if (selectedPlaylist == null) {
                 FloatingActionButton(
                     onClick = { showCreateDialog = true },
-                    containerColor = MaterialTheme.colorScheme.primary
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    shape = RoundedCornerShape(16.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Add,
@@ -81,6 +83,7 @@ fun PlaylistsScreen(
             if (currentSelected != null) {
                 // Playlist Detail View
                 val playlistTracks = allTracks.filter { currentSelected.trackIds.contains(it.id) }
+                val totalDurationMs = playlistTracks.sumOf { it.durationMs }
 
                 Column(
                     modifier = Modifier
@@ -105,7 +108,7 @@ fun PlaylistsScreen(
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "${playlistTracks.size} 曲",
+                                text = "${playlistTracks.size} 曲 • ${formatTotalDuration(totalDurationMs)}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -121,7 +124,8 @@ fun PlaylistsScreen(
                         Button(
                             onClick = { onPlayPlaylist(currentSelected, false) },
                             enabled = playlistTracks.isNotEmpty(),
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp)
                         ) {
                             Icon(Icons.Default.PlayArrow, contentDescription = null)
                             Spacer(modifier = Modifier.width(6.dp))
@@ -133,7 +137,8 @@ fun PlaylistsScreen(
                         OutlinedButton(
                             onClick = { onPlayPlaylist(currentSelected, true) },
                             enabled = playlistTracks.isNotEmpty(),
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp)
                         ) {
                             Icon(Icons.Default.Shuffle, contentDescription = null)
                             Spacer(modifier = Modifier.width(6.dp))
@@ -151,7 +156,7 @@ fun PlaylistsScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = "このプレイリストには楽曲がありません。\nライブラリから追加してください。",
+                                text = "このプレイリストには楽曲がありません。\nライブラリや検索画面から追加してください。",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -164,6 +169,7 @@ fun PlaylistsScreen(
                                 TrackItem(
                                     track = track,
                                     isPlaying = currentTrack?.id == track.id && isPlaying,
+                                    isDownloading = downloadingTrackIds.contains(track.id),
                                     onTrackClick = { onPlayTrack(track, playlistTracks) },
                                     onAddToPlaylistClick = { onAddToPlaylistClick(track) },
                                     onDeleteClick = { onRemoveFromPlaylist(currentSelected.id, track.id) }
@@ -179,7 +185,7 @@ fun PlaylistsScreen(
                 ) {
                     Text(
                         text = "プレイリスト一覧",
-                        style = MaterialTheme.typography.titleLarge,
+                        style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(16.dp)
                     )
@@ -196,7 +202,7 @@ fun PlaylistsScreen(
                             )
                         }
                     } else {
-                        LazyColumn {
+                        LazyColumn(modifier = Modifier.padding(horizontal = 16.dp)) {
                             items(playlists) { playlist ->
                                 PlaylistItem(
                                     playlist = playlist,
@@ -219,4 +225,11 @@ fun PlaylistsScreen(
             onDismiss = { showCreateDialog = false }
         )
     }
+}
+
+private fun formatTotalDuration(totalMs: Long): String {
+    val totalMin = totalMs / 1000 / 60
+    val hours = totalMin / 60
+    val mins = totalMin % 60
+    return if (hours > 0) "${hours}時間${mins}分" else "${mins}分"
 }

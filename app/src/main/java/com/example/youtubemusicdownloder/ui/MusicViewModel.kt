@@ -38,8 +38,14 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private val _searchResults = MutableStateFlow<List<SearchResultItem>>(emptyList())
     val searchResults: StateFlow<List<SearchResultItem>> = _searchResults.asStateFlow()
 
+    private val _relatedTracks = MutableStateFlow<List<SearchResultItem>>(emptyList())
+    val relatedTracks: StateFlow<List<SearchResultItem>> = _relatedTracks.asStateFlow()
+
     private val _isSearching = MutableStateFlow(false)
     val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
+
+    private val _downloadingTrackIds = MutableStateFlow<Set<String>>(emptySet())
+    val downloadingTrackIds: StateFlow<Set<String>> = _downloadingTrackIds.asStateFlow()
 
     // Update state
     private val _availableUpdate = MutableStateFlow<ReleaseInfo?>(null)
@@ -76,6 +82,14 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         _tracks.value = repository.loadTracks()
         _playlists.value = repository.loadPlaylists()
         _apiKey.value = repository.getApiKey()
+    }
+
+    fun fetchRelatedTracks(track: Track) {
+        viewModelScope.launch {
+            val videoId = YoutubeDownloader.extractVideoId(track.youtubeUrl) ?: ""
+            val related = YoutubeSearchService.fetchRelatedVideos(videoId, track.artist, track.title)
+            _relatedTracks.value = related
+        }
     }
 
     fun importLocalAudioFiles(context: Context, uris: List<Uri>) {
@@ -196,6 +210,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 var newTrack = YoutubeDownloader.parseTrackFromUrl(urlInput, customTitle, _apiKey.value)
 
+                _downloadingTrackIds.value = _downloadingTrackIds.value + newTrack.id
                 val file = YoutubeDownloader.downloadAudioToFile(getApplication(), newTrack)
                 newTrack = newTrack.copy(
                     localFilePath = file.absolutePath,
@@ -213,6 +228,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 _statusMessage.value = "ダウンロードに失敗しました: ${e.message}"
             } finally {
                 _isDownloading.value = false
+                _downloadingTrackIds.value = _downloadingTrackIds.value - urlInput
             }
         }
     }
@@ -222,6 +238,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             _isDownloading.value = true
+            _downloadingTrackIds.value = _downloadingTrackIds.value + track.id
             _statusMessage.value = "「${track.title}」をダウンロード中..."
             try {
                 val file = YoutubeDownloader.downloadAudioToFile(getApplication(), track)
@@ -242,6 +259,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 _statusMessage.value = "ダウンロードに失敗しました"
             } finally {
                 _isDownloading.value = false
+                _downloadingTrackIds.value = _downloadingTrackIds.value - track.id
             }
         }
     }
@@ -300,6 +318,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     fun playTrack(track: Track, playlistTracks: List<Track>? = null) {
         val queue = playlistTracks ?: _tracks.value
         playerManager.playTrack(track, queue)
+        fetchRelatedTracks(track)
     }
 
     fun playPlaylist(playlist: Playlist, startShuffle: Boolean = false) {
@@ -311,9 +330,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 playerManager.toggleShuffle()
             }
             val randomTrack = playlistTracks.random()
-            playerManager.playTrack(randomTrack, playlistTracks)
+            playTrack(randomTrack, playlistTracks)
         } else {
-            playerManager.playTrack(playlistTracks.first(), playlistTracks)
+            playTrack(playlistTracks.first(), playlistTracks)
         }
     }
 

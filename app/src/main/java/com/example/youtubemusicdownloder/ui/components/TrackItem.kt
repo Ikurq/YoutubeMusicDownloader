@@ -10,14 +10,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -45,6 +46,7 @@ import com.example.youtubemusicdownloder.model.Track
 fun TrackItem(
     track: Track,
     isPlaying: Boolean = false,
+    isDownloading: Boolean = false,
     onTrackClick: () -> Unit,
     onAddToPlaylistClick: (() -> Unit)? = null,
     onDownloadClick: (() -> Unit)? = null,
@@ -116,15 +118,38 @@ fun TrackItem(
                 )
             }
 
-            if (track.isDownloaded) {
-                Icon(
-                    imageVector = Icons.Default.DownloadDone,
-                    contentDescription = "Downloaded",
-                    tint = MaterialTheme.colorScheme.primary,
+            if (isDownloading) {
+                CircularProgressIndicator(
                     modifier = Modifier
-                        .size(22.dp)
-                        .padding(end = 4.dp)
+                        .size(20.dp)
+                        .padding(end = 4.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.primary
                 )
+            } else if (track.isDownloaded) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = "保存済み",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "保存済み",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
             } else if (onDownloadClick != null) {
                 IconButton(onClick = onDownloadClick) {
                     Icon(
