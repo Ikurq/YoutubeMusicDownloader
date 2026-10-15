@@ -1,6 +1,7 @@
 package com.example.youtubemusicdownloder.data
 
 import android.content.Context
+import android.os.Environment
 import com.example.youtubemusicdownloder.model.Track
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -39,6 +40,19 @@ object YoutubeDownloader {
 
     fun getThumbnailUrl(videoId: String): String {
         return "https://img.youtube.com/vi/$videoId/hqdefault.jpg"
+    }
+
+    private fun getPublicMusicDirectory(context: Context): File {
+        val publicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
+        val targetFolder = File(publicDir, "MusicPlayerDL")
+        if (!targetFolder.exists()) {
+            targetFolder.mkdirs()
+        }
+        return if (targetFolder.exists() && targetFolder.canWrite()) {
+            targetFolder
+        } else {
+            context.getExternalFilesDir("Music") ?: context.filesDir
+        }
     }
 
     suspend fun fetchDirectAudioUrl(videoId: String): String? = withContext(Dispatchers.IO) {
@@ -141,7 +155,7 @@ object YoutubeDownloader {
             }
         }
 
-        // 3. Query active Invidious instances list as dynamic fallback
+        // 3. Dynamic fallback
         try {
             val listUrl = URL("https://api.invidious.io/instances.json?sort_by=type,health")
             val conn = listUrl.openConnection() as HttpURLConnection
@@ -250,9 +264,10 @@ object YoutubeDownloader {
             throw IllegalStateException("YouTube 音声ストリームの取得に失敗しました。URLをご確認ください。")
         }
 
-        val musicDir = context.getExternalFilesDir("Music") ?: context.filesDir
-        val safeFileName = track.id + ".m4a"
-        val outputFile = File(musicDir, safeFileName)
+        val targetDir = getPublicMusicDirectory(context)
+        val cleanTitle = track.title.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim()
+        val safeFileName = "${cleanTitle}.m4a"
+        val outputFile = File(targetDir, safeFileName)
 
         if (outputFile.exists() && outputFile.length() > 0) {
             return@withContext outputFile
