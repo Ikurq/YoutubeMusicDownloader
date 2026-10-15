@@ -10,6 +10,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
+import java.io.RandomAccessFile
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.regex.Pattern
@@ -66,10 +67,33 @@ object YoutubeDownloader {
         }
     }
 
+    suspend fun fetchOEmbedInfo(videoId: String): Pair<String, String>? = withContext(Dispatchers.IO) {
+        try {
+            val oembedUrl = "https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=$videoId&format=json"
+            val conn = URL(oembedUrl).openConnection() as HttpURLConnection
+            conn.connectTimeout = 5000
+            conn.readTimeout = 5000
+            conn.requestMethod = "GET"
+
+            if (conn.responseCode == 200) {
+                val jsonStr = conn.inputStream.bufferedReader().use { it.readText() }
+                val json = JSONObject(jsonStr)
+                val title = json.optString("title", "")
+                val author = json.optString("author_name", "")
+                if (title.isNotBlank()) {
+                    return@withContext Pair(title, author)
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return@withContext null
+    }
+
     suspend fun fetchDirectAudioUrl(videoId: String): String? = withContext(Dispatchers.IO) {
         val errors = mutableListOf<String>()
 
-        // 1. InnerTube API with relaxed 15s timeout
+        // 1. InnerTube API with 15s timeout
         try {
             val url = URL("https://www.youtube.com/youtubei/v1/player")
             val conn = url.openConnection() as HttpURLConnection
@@ -133,7 +157,7 @@ object YoutubeDownloader {
             errors.add("InnerTube: ${e.message}")
         }
 
-        // 2. Parallel Node Racing (並列最速応答レース) with 15s timeout
+        // 2. Parallel Node Racing with 15s timeout
         try {
             val parallelResult = coroutineScope {
                 val jobs = CANDIDATE_NODES.map { node ->
@@ -186,7 +210,7 @@ object YoutubeDownloader {
         }
 
         if (errors.isNotEmpty()) {
-            throw IllegalStateException("タイムアウト/音源取得失敗: ${errors.take(2).joinToString("; ")}")
+            throw IllegalStateException("音源取得失敗: ${errors.take(2).joinToString("; ")}")
         }
 
         return@withContext null
@@ -200,14 +224,23 @@ object YoutubeDownloader {
         val cleanUrl = urlInput.trim()
         val videoId = extractVideoId(cleanUrl)
 
-        var rawTitle = if (videoId != null) "YouTube Track ($videoId)" else cleanUrl
-        var channelTitle = "YouTube Artist"
+        var rawTitle = cleanUrl
+        var channelTitle = ""
         var description = ""
+
+        // Fetch real video title & author using YouTube oEmbed API if URL
+        if (videoId != null) {
+            val oembed = fetchOEmbedInfo(videoId)
+            if (oembed != null) {
+                rawTitle = oembed.first
+                channelTitle = oembed.second
+            }
+        }
 
         if (videoId != null && !apiKey.isNullOrBlank()) {
             val officialData = GoogleApiService.fetchVideoMetadata(videoId, apiKey)
-            rawTitle = officialData.songTitle
-            channelTitle = officialData.unitArtist
+            if (officialData.songTitle.isNotBlank()) rawTitle = officialData.songTitle
+            if (officialData.unitArtist.isNotBlank()) channelTitle = officialData.unitArtist
             description = officialData.albumName
         }
 
@@ -279,8 +312,8 @@ object YoutubeDownloader {
 
                 val conn = URL(activeUrl).openConnection() as HttpURLConnection
                 conn.instanceFollowRedirects = true
-                conn.connectTimeout = 30000 // Relaxed 30s connect timeout
-                conn.readTimeout = 45000    // Relaxed 45s read timeout
+                conn.connectTimeout = 30000
+                conn.readTimeout = 45000
                 conn.requestMethod = "GET"
                 conn.setRequestProperty(
                     "User-Agent",

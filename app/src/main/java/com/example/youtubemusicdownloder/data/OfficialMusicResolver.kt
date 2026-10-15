@@ -26,13 +26,19 @@ object OfficialMusicResolver {
 
         // 1. Query iTunes Official Music Database API (Japan Region & Global)
         try {
-            val searchTerm = "${cleaned.unitArtist} ${cleaned.songTitle}".ifBlank { rawTitle }
-            val encodedTerm = URLEncoder.encode(searchTerm, "UTF-8")
+            val queryText = "${cleaned.unitArtist} ${cleaned.songTitle}"
+                .replace("YouTube Artist", "")
+                .replace("YouTube Video", "")
+                .replace("YouTube Track", "")
+                .trim()
+                .ifBlank { rawTitle }
+
+            val encodedTerm = URLEncoder.encode(queryText, "UTF-8")
             val apiUrl = "https://itunes.apple.com/search?term=$encodedTerm&country=JP&media=music&entity=song&limit=1"
 
             val connection = URL(apiUrl).openConnection() as HttpURLConnection
-            connection.connectTimeout = 5000
-            connection.readTimeout = 5000
+            connection.connectTimeout = 6000
+            connection.readTimeout = 6000
             connection.requestMethod = "GET"
 
             if (connection.responseCode == 200) {
@@ -44,15 +50,15 @@ object OfficialMusicResolver {
                     val item = results.getJSONObject(0)
                     val officialTitle = item.optString("trackName", cleaned.songTitle)
                     val officialArtist = item.optString("artistName", cleaned.unitArtist)
-                    val officialAlbum = item.optString("collectionName", "Single")
+                    val officialAlbum = item.optString("collectionName", "")
                     val artwork100 = item.optString("artworkUrl100", "")
                     val artwork600 = artwork100.replace("100x100bb", "600x600bb")
 
-                    if (officialAlbum.isNotBlank() && officialTitle.isNotBlank()) {
+                    if (officialTitle.isNotBlank()) {
                         return@withContext OfficialTrackMetadata(
                             songTitle = officialTitle,
-                            unitArtist = officialArtist,
-                            albumName = officialAlbum,
+                            unitArtist = if (officialArtist.contains("YouTube")) cleaned.unitArtist else officialArtist,
+                            albumName = if (officialAlbum.isNotBlank()) officialAlbum else "${officialTitle} - Single",
                             highResCoverUrl = artwork600
                         )
                     }
@@ -65,10 +71,16 @@ object OfficialMusicResolver {
         // 2. Secondary fallback via Gemini AI Grounding
         val geminiCleaned = GeminiMetadataCleaner.cleanWithGemini(rawTitle, channelTitle, description, apiKey)
 
+        val finalAlbum = if (geminiCleaned.albumName.isNotBlank() && !geminiCleaned.albumName.contains("YouTube")) {
+            geminiCleaned.albumName
+        } else {
+            "${geminiCleaned.songTitle} - Single"
+        }
+
         return@withContext OfficialTrackMetadata(
             songTitle = geminiCleaned.songTitle,
-            unitArtist = geminiCleaned.unitArtist,
-            albumName = if (geminiCleaned.albumName.isBlank()) "Single" else geminiCleaned.albumName
+            unitArtist = if (geminiCleaned.unitArtist.contains("YouTube")) channelTitle.ifBlank { "YouTube Artist" } else geminiCleaned.unitArtist,
+            albumName = finalAlbum
         )
     }
 }
