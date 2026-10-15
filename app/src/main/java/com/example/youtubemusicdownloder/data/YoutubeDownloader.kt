@@ -169,6 +169,54 @@ object YoutubeDownloader {
             }
         }
 
+        // 3. Dynamic fallback
+        try {
+            val listUrl = URL("https://api.invidious.io/instances.json?sort_by=type,health")
+            val conn = listUrl.openConnection() as HttpURLConnection
+            conn.connectTimeout = 4000
+            conn.readTimeout = 4000
+            if (conn.responseCode == 200) {
+                val jsonStr = conn.inputStream.bufferedReader().use { it.readText() }
+                val array = JSONArray(jsonStr)
+                var tried = 0
+                for (i in 0 until array.length()) {
+                    if (tried >= 5) break
+                    val inst = array.getJSONArray(i)
+                    val domain = inst.optString(0)
+                    val info = inst.optJSONObject(1)
+                    val type = info?.optString("type")
+                    if (type == "https" && domain.isNotBlank()) {
+                        tried++
+                        try {
+                            val nodeUrl = URL("https://$domain/api/v1/videos/$videoId")
+                            val nodeConn = nodeUrl.openConnection() as HttpURLConnection
+                            nodeConn.connectTimeout = 3000
+                            nodeConn.readTimeout = 3000
+                            if (nodeConn.responseCode == 200) {
+                                val resp = nodeConn.inputStream.bufferedReader().use { it.readText() }
+                                val nodeJson = JSONObject(resp)
+                                val formats = nodeJson.optJSONArray("adaptiveFormats")
+                                if (formats != null) {
+                                    for (j in 0 until formats.length()) {
+                                        val f = formats.getJSONObject(j)
+                                        val mime = f.optString("type")
+                                        val audioUrl = f.optString("url")
+                                        if (mime.contains("audio") && audioUrl.isNotBlank()) {
+                                            return@withContext audioUrl
+                                        }
+                                    }
+                                }
+                            }
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
         return@withContext null
     }
 
@@ -192,7 +240,7 @@ object YoutubeDownloader {
         }
 
         val metadataDeferred = async {
-            GeminiMetadataCleaner.cleanWithGemini(
+            OfficialMusicResolver.resolveOfficialMetadata(
                 rawTitle = rawTitle,
                 channelTitle = channelTitle,
                 description = description,
@@ -212,7 +260,11 @@ object YoutubeDownloader {
         val directAudioUrl = audioUrlDeferred.await()
 
         val finalTitle = if (!customTitle.isNullOrBlank()) customTitle else metadata.songTitle
-        val thumbnailUrl = videoId?.let { getThumbnailUrl(it) } ?: ""
+        val thumbnailUrl = if (metadata.highResCoverUrl.isNotBlank()) {
+            metadata.highResCoverUrl
+        } else {
+            videoId?.let { getThumbnailUrl(it) } ?: ""
+        }
 
         Track(
             title = finalTitle,
@@ -225,7 +277,6 @@ object YoutubeDownloader {
         )
     }
 
-    // High-Speed Multi-Thread Parallel Download Engine (3x - 5x Speedup!)
     suspend fun downloadAudioToFile(
         context: Context,
         track: Track,
@@ -314,7 +365,6 @@ object YoutubeDownloader {
                 return@withContext outputFile
             } catch (e: Exception) {
                 e.printStackTrace()
-                // Fallback to sequential stream
             }
         }
 
