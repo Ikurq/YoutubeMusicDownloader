@@ -187,38 +187,30 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         _searchResults.value = emptyList()
     }
 
-    fun parseAndAddTrack(urlInput: String, customTitle: String? = null, downloadLocally: Boolean = true) {
+    fun parseAndAddTrack(urlInput: String, customTitle: String? = null) {
         if (urlInput.isBlank()) return
 
         viewModelScope.launch {
             _isDownloading.value = true
-            _statusMessage.value = "URLおよび楽曲メタデータを解析中..."
+            _statusMessage.value = "楽曲情報およびローカルダウンロードを処理中..."
             try {
                 var newTrack = YoutubeDownloader.parseTrackFromUrl(urlInput, customTitle, _apiKey.value)
 
-                if (downloadLocally) {
-                    _statusMessage.value = "楽曲をダウンロード保存中..."
-                    try {
-                        val file = YoutubeDownloader.downloadAudioToFile(getApplication(), newTrack)
-                        newTrack = newTrack.copy(
-                            localFilePath = file.absolutePath,
-                            isDownloaded = true
-                        )
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                        _statusMessage.value = "ストリーミング形式で保存しました"
-                    }
-                }
+                val file = YoutubeDownloader.downloadAudioToFile(getApplication(), newTrack)
+                newTrack = newTrack.copy(
+                    localFilePath = file.absolutePath,
+                    isDownloaded = true
+                )
 
                 val currentList = _tracks.value.toMutableList()
                 currentList.add(0, newTrack)
                 _tracks.value = currentList
                 repository.saveTracks(currentList)
 
-                _statusMessage.value = "「${newTrack.title}」を追加しました！"
+                _statusMessage.value = "「${newTrack.title}」をMusicフォルダに保存しました！"
             } catch (e: Exception) {
                 e.printStackTrace()
-                _statusMessage.value = "追加に失敗しました: ${e.message}"
+                _statusMessage.value = "ダウンロードに失敗しました: ${e.message}"
             } finally {
                 _isDownloading.value = false
             }
@@ -226,7 +218,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun downloadTrack(track: Track) {
-        if (track.isDownloaded) return
+        if (track.isDownloaded && !track.localFilePath.isNullOrBlank()) return
 
         viewModelScope.launch {
             _isDownloading.value = true

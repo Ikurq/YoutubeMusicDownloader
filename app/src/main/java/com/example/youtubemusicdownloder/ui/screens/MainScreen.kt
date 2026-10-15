@@ -217,8 +217,8 @@ fun MainScreen(
                         onSearch = { viewModel.searchYouTube(it) },
                         onClearSearch = { viewModel.clearSearchResults() },
                         onSaveApiKey = { viewModel.saveApiKey(it) },
-                        onAddTrack = { url, title, download ->
-                            viewModel.parseAndAddTrack(url, title, download)
+                        onAddTrack = { url, title ->
+                            viewModel.parseAndAddTrack(url, title)
                         }
                     )
                     1 -> PlaylistsScreen(

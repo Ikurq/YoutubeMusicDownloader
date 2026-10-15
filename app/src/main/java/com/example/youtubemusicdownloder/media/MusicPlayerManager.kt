@@ -6,23 +6,19 @@ import android.media.MediaPlayer
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
-import com.example.youtubemusicdownloder.data.YoutubeDownloader
 import com.example.youtubemusicdownloder.model.RepeatMode
 import com.example.youtubemusicdownloder.model.Track
 import com.example.youtubemusicdownloder.service.MusicPlaybackService
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
+import java.io.File
 import kotlin.random.Random
 
 class MusicPlayerManager(private val context: Context) {
 
     private var mediaPlayer: MediaPlayer? = null
     private val handler = Handler(Looper.getMainLooper())
-    private val scope = CoroutineScope(Dispatchers.Main)
 
     private val _currentTrack = MutableStateFlow<Track?>(null)
     val currentTrack: StateFlow<Track?> = _currentTrack.asStateFlow()
@@ -79,64 +75,53 @@ class MusicPlayerManager(private val context: Context) {
         _currentTrack.value = track
         releasePlayer()
 
-        scope.launch(Dispatchers.IO) {
-            try {
-                var dataSource = if (track.isDownloaded && !track.localFilePath.isNullOrEmpty()) {
-                    track.localFilePath
-                } else if (track.audioUrl.isNotBlank()) {
-                    track.audioUrl
-                } else {
-                    val videoId = YoutubeDownloader.extractVideoId(track.youtubeUrl)
-                    if (videoId != null) {
-                        YoutubeDownloader.fetchDirectAudioUrl(videoId) ?: ""
-                    } else ""
-                }
+        // Pure offline playback check
+        val localFile = track.localFilePath?.let { File(it) }
+        if (localFile == null || !localFile.exists() || localFile.length() == 0L) {
+            _isPlaying.value = false
+            return
+        }
 
-                if (dataSource.isBlank()) {
-                    _isPlaying.value = false
-                    return@launch
-                }
-
-                val player = MediaPlayer().apply {
-                    setWakeMode(context, PowerManager.PARTIAL_WAKE_LOCK)
-                    setAudioAttributes(
-                        AudioAttributes.Builder()
-                            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                            .setUsage(AudioAttributes.USAGE_MEDIA)
-                            .build()
-                    )
-                    setDataSource(dataSource)
-                    prepareAsync()
-                }
-
-                player.setOnPreparedListener { mp ->
-                    mp.start()
-                    _isPlaying.value = true
-                    _durationMs.value = mp.duration.toLong().coerceAtLeast(1L)
-                    handler.post(progressRunnable)
-
-                    MusicPlaybackService.startService(
-                        context,
-                        track.title,
-                        track.artist,
-                        true
-                    )
-                }
-
-                player.setOnCompletionListener {
-                    onTrackCompleted()
-                }
-
-                player.setOnErrorListener { _, _, _ ->
-                    _isPlaying.value = false
-                    true
-                }
-
-                mediaPlayer = player
-            } catch (e: Exception) {
-                e.printStackTrace()
-                _isPlaying.value = false
+        try {
+            val player = MediaPlayer().apply {
+                setWakeMode(context, PowerManager.PARTIAL_WAKE_LOCK)
+                setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .build()
+                )
+                setDataSource(localFile.absolutePath)
+                prepareAsync()
             }
+
+            player.setOnPreparedListener { mp ->
+                mp.start()
+                _isPlaying.value = true
+                _durationMs.value = mp.duration.toLong().coerceAtLeast(1L)
+                handler.post(progressRunnable)
+
+                MusicPlaybackService.startService(
+                    context,
+                    track.title,
+                    track.artist,
+                    true
+                )
+            }
+
+            player.setOnCompletionListener {
+                onTrackCompleted()
+            }
+
+            player.setOnErrorListener { _, _, _ ->
+                _isPlaying.value = false
+                true
+            }
+
+            mediaPlayer = player
+        } catch (e: Exception) {
+            e.printStackTrace()
+            _isPlaying.value = false
         }
     }
 

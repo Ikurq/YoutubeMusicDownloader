@@ -30,8 +30,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -69,11 +67,10 @@ fun UrlSearchScreen(
     onSearch: (query: String) -> Unit,
     onClearSearch: () -> Unit,
     onSaveApiKey: (key: String) -> Unit,
-    onAddTrack: (url: String, customTitle: String?, autoDownload: Boolean) -> Unit
+    onAddTrack: (url: String, customTitle: String?) -> Unit
 ) {
     var searchInput by remember { mutableStateOf("") }
     var customTitle by remember { mutableStateOf("") }
-    var autoDownload by remember { mutableStateOf(true) }
     var showApiKeySettings by remember { mutableStateOf(false) }
     var inputApiKey by remember(apiKey) { mutableStateOf(apiKey) }
 
@@ -102,7 +99,7 @@ fun UrlSearchScreen(
                     color = MaterialTheme.colorScheme.onBackground
                 )
                 Text(
-                    text = "YouTubeから検索 または URLを入力して楽曲を保存できます",
+                    text = "100% オフライン完全対応・ローカルファイル自動保存",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -140,7 +137,7 @@ fun UrlSearchScreen(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "APIキーを設定すると高精度の公式検索・Gemini楽曲整形が利用可能です。",
+                        text = "APIキーを設定すると公式データで検索・Gemini楽曲整形が行えます。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(vertical = 4.dp)
@@ -220,44 +217,26 @@ fun UrlSearchScreen(
                     )
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                if (videoId == null && searchInput.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(8.dp))
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(
-                            checked = autoDownload,
-                            onCheckedChange = { autoDownload = it },
-                            colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary)
-                        )
-                        Text(
-                            text = "ローカル保存 (オフライン再生)",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-
-                    if (videoId == null && searchInput.isNotBlank()) {
-                        Button(
-                            onClick = {
-                                keyboardController?.hide()
-                                onSearch(searchInput)
-                            },
-                            enabled = !isSearching,
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            if (isSearching) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    color = Color.White,
-                                    strokeWidth = 2.dp
-                                )
-                            } else {
-                                Text("検索")
-                            }
+                    Button(
+                        onClick = {
+                            keyboardController?.hide()
+                            onSearch(searchInput)
+                        },
+                        enabled = !isSearching,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.align(Alignment.End)
+                    ) {
+                        if (isSearching) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = Color.White,
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Text("検索")
                         }
                     }
                 }
@@ -329,7 +308,7 @@ fun UrlSearchScreen(
 
                     Button(
                         onClick = {
-                            onAddTrack(searchInput, customTitle.ifBlank { null }, autoDownload)
+                            onAddTrack(searchInput, customTitle.ifBlank { null })
                             searchInput = ""
                             customTitle = ""
                         },
@@ -350,7 +329,7 @@ fun UrlSearchScreen(
                         } else {
                             Icon(Icons.Default.Download, contentDescription = null)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("ライブラリに追加・保存", fontWeight = FontWeight.Bold)
+                            Text("ローカル保存してライブラリに追加", fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -447,7 +426,7 @@ fun UrlSearchScreen(
 
                             Button(
                                 onClick = {
-                                    onAddTrack(item.url, item.title, autoDownload)
+                                    onAddTrack(item.url, item.title)
                                 },
                                 shape = RoundedCornerShape(10.dp),
                                 colors = ButtonDefaults.buttonColors(
@@ -461,7 +440,7 @@ fun UrlSearchScreen(
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("追加", style = MaterialTheme.typography.labelMedium)
+                                Text("保存", style = MaterialTheme.typography.labelMedium)
                             }
                         }
                     }
