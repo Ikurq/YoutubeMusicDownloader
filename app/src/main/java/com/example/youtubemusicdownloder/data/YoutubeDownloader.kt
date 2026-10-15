@@ -4,8 +4,9 @@ import android.content.Context
 import android.os.Environment
 import com.example.youtubemusicdownloder.model.Track
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
@@ -19,11 +20,13 @@ object YoutubeDownloader {
         "(?:v=|/shorts/|/embed/|youtu\\.be/|v/)([a-zA-Z0-9_-]{11})"
     )
 
-    private val STATIC_INVIDIOUS_NODES = listOf(
+    private val CANDIDATE_NODES = listOf(
         "https://invidious.f5.si",
         "https://inv.nadeko.net",
+        "https://yt.artemislena.eu",
+        "https://invidious.perennialworks.net",
         "https://invidious.nerdvpn.de",
-        "https://yt.artemislena.eu"
+        "https://invidious.lunar.icu"
     )
 
     fun extractVideoId(url: String): String? {
@@ -66,14 +69,14 @@ object YoutubeDownloader {
     suspend fun fetchDirectAudioUrl(videoId: String): String? = withContext(Dispatchers.IO) {
         val errors = mutableListOf<String>()
 
-        // Stage 1: InnerTube API
+        // 1. InnerTube API with relaxed 15s timeout
         try {
             val url = URL("https://www.youtube.com/youtubei/v1/player")
             val conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "POST"
             conn.setRequestProperty("Content-Type", "application/json")
-            conn.connectTimeout = 5000
-            conn.readTimeout = 5000
+            conn.connectTimeout = 15000
+            conn.readTimeout = 20000
             conn.doOutput = true
 
             val jsonBody = JSONObject().apply {
@@ -127,100 +130,63 @@ object YoutubeDownloader {
                 errors.add("InnerTube HTTP ${conn.responseCode}")
             }
         } catch (e: Exception) {
-            errors.add("InnerTube Error: ${e.message}")
+            errors.add("InnerTube: ${e.message}")
         }
 
-        // Stage 2: Static Invidious Nodes
-        for (node in STATIC_INVIDIOUS_NODES) {
-            try {
-                val apiUrl = URL("$node/api/v1/videos/$videoId")
-                val conn = apiUrl.openConnection() as HttpURLConnection
-                conn.requestMethod = "GET"
-                conn.connectTimeout = 4000
-                conn.readTimeout = 4000
-
-                if (conn.responseCode == 200) {
-                    val responseStr = conn.inputStream.bufferedReader().use { it.readText() }
-                    val json = JSONObject(responseStr)
-                    val adaptiveFormats = json.optJSONArray("adaptiveFormats")
-                    if (adaptiveFormats != null) {
-                        var bestAudioUrl: String? = null
-                        var highestBitrate = 0
-                        for (i in 0 until adaptiveFormats.length()) {
-                            val format = adaptiveFormats.getJSONObject(i)
-                            val mimeType = format.optString("type")
-                            val audioUrl = format.optString("url")
-                            val bitrate = format.optInt("bitrate", 0)
-
-                            if (mimeType.contains("audio") && audioUrl.isNotBlank()) {
-                                if (bitrate > highestBitrate) {
-                                    highestBitrate = bitrate
-                                    bestAudioUrl = audioUrl
-                                }
-                            }
-                        }
-                        if (bestAudioUrl != null) {
-                            return@withContext bestAudioUrl
-                        }
-                    }
-                } else {
-                    errors.add("$node: HTTP ${conn.responseCode}")
-                }
-            } catch (e: Exception) {
-                errors.add("$node: ${e.message}")
-            }
-        }
-
-        // Stage 3: Dynamic Invidious Live Instance Pool
+        // 2. Parallel Node Racing (並列最速応答レース) with 15s timeout
         try {
-            val listUrl = URL("https://api.invidious.io/instances.json?sort_by=type,health")
-            val conn = listUrl.openConnection() as HttpURLConnection
-            conn.connectTimeout = 4000
-            conn.readTimeout = 4000
-            if (conn.responseCode == 200) {
-                val jsonStr = conn.inputStream.bufferedReader().use { it.readText() }
-                val array = JSONArray(jsonStr)
-                var tried = 0
-                for (i in 0 until array.length()) {
-                    if (tried >= 6) break
-                    val inst = array.getJSONArray(i)
-                    val domain = inst.optString(0)
-                    val info = inst.optJSONObject(1)
-                    val type = info?.optString("type")
-                    if (type == "https" && domain.isNotBlank()) {
-                        tried++
+            val parallelResult = coroutineScope {
+                val jobs = CANDIDATE_NODES.map { node ->
+                    async(Dispatchers.IO) {
                         try {
-                            val nodeUrl = URL("https://$domain/api/v1/videos/$videoId")
-                            val nodeConn = nodeUrl.openConnection() as HttpURLConnection
-                            nodeConn.connectTimeout = 3000
-                            nodeConn.readTimeout = 3000
-                            if (nodeConn.responseCode == 200) {
-                                val resp = nodeConn.inputStream.bufferedReader().use { it.readText() }
-                                val nodeJson = JSONObject(resp)
-                                val formats = nodeJson.optJSONArray("adaptiveFormats")
-                                if (formats != null) {
-                                    for (j in 0 until formats.length()) {
-                                        val f = formats.getJSONObject(j)
-                                        val mime = f.optString("type")
-                                        val audioUrl = f.optString("url")
-                                        if (mime.contains("audio") && audioUrl.isNotBlank()) {
-                                            return@withContext audioUrl
+                            val apiUrl = URL("$node/api/v1/videos/$videoId")
+                            val conn = apiUrl.openConnection() as HttpURLConnection
+                            conn.requestMethod = "GET"
+                            conn.connectTimeout = 15000
+                            conn.readTimeout = 20000
+
+                            if (conn.responseCode == 200) {
+                                val responseStr = conn.inputStream.bufferedReader().use { it.readText() }
+                                val json = JSONObject(responseStr)
+                                val adaptiveFormats = json.optJSONArray("adaptiveFormats")
+                                if (adaptiveFormats != null) {
+                                    for (i in 0 until adaptiveFormats.length()) {
+                                        val format = adaptiveFormats.getJSONObject(i)
+                                        val mimeType = format.optString("type")
+                                        val audioUrl = format.optString("url")
+                                        if (mimeType.contains("audio") && audioUrl.isNotBlank()) {
+                                            return@async audioUrl
                                         }
                                     }
                                 }
                             }
                         } catch (e: Exception) {
-                            errors.add("$domain: ${e.message}")
+                            // ignore individual node failure
                         }
+                        null
                     }
                 }
+
+                var winnerUrl: String? = null
+                for (j in jobs) {
+                    val res = j.await()
+                    if (res != null && winnerUrl == null) {
+                        winnerUrl = res
+                        break
+                    }
+                }
+                winnerUrl
+            }
+
+            if (parallelResult != null) {
+                return@withContext parallelResult
             }
         } catch (e: Exception) {
-            errors.add("InvidiousPool: ${e.message}")
+            errors.add("ParallelRace: ${e.message}")
         }
 
         if (errors.isNotEmpty()) {
-            throw IllegalStateException("音源取得失敗: ${errors.take(2).joinToString("; ")}")
+            throw IllegalStateException("タイムアウト/音源取得失敗: ${errors.take(2).joinToString("; ")}")
         }
 
         return@withContext null
@@ -313,8 +279,8 @@ object YoutubeDownloader {
 
                 val conn = URL(activeUrl).openConnection() as HttpURLConnection
                 conn.instanceFollowRedirects = true
-                conn.connectTimeout = 12000
-                conn.readTimeout = 25000
+                conn.connectTimeout = 30000 // Relaxed 30s connect timeout
+                conn.readTimeout = 45000    // Relaxed 45s read timeout
                 conn.requestMethod = "GET"
                 conn.setRequestProperty(
                     "User-Agent",
@@ -347,7 +313,7 @@ object YoutubeDownloader {
                         val freshUrl = fetchDirectAudioUrl(videoId)
                         if (freshUrl != null) streamUrl = freshUrl
                     }
-                    lastError = IllegalStateException("HTTP Error $responseCode (URL Expired)")
+                    lastError = IllegalStateException("HTTP Error $responseCode (トークン期限切れ)")
                 } else {
                     lastError = IllegalStateException("HTTP Error $responseCode")
                 }
@@ -359,7 +325,7 @@ object YoutubeDownloader {
 
         if (!success || !outputFile.exists() || outputFile.length() == 0L) {
             if (outputFile.exists()) outputFile.delete()
-            throw IllegalStateException("DL失敗: ${lastError?.message ?: "ネットワーク接続エラー"}")
+            throw IllegalStateException("DL失敗: ${lastError?.message ?: "接続タイムアウト/エラー"}")
         }
 
         copyToPublicMusicDir(outputFile, "$cleanTitle.m4a")
