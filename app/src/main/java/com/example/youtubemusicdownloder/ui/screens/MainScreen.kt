@@ -116,7 +116,7 @@ fun MainScreen(
                 TopAppBar(
                     title = {
                         Text(
-                            text = "YouTube Music Downloader",
+                            text = "Music DL & Player",
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
