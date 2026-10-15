@@ -36,7 +36,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
@@ -88,7 +87,7 @@ fun UrlSearchScreen(
             .background(MaterialTheme.colorScheme.background)
             .padding(16.dp)
     ) {
-        // Top Bar Header
+        // Header
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -103,7 +102,7 @@ fun UrlSearchScreen(
                     color = MaterialTheme.colorScheme.onBackground
                 )
                 Text(
-                    text = "YouTubeから高精度な楽曲検索・保存が可能です",
+                    text = "YouTubeから検索 または URLを入力して楽曲を保存できます",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -141,7 +140,7 @@ fun UrlSearchScreen(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "APIキーを設定すると公式データで検索・Gemini楽曲整形が行えます。",
+                        text = "APIキーを設定すると高精度の公式検索・Gemini楽曲整形が利用可能です。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(vertical = 4.dp)
@@ -187,7 +186,7 @@ fun UrlSearchScreen(
                         if (it.isBlank()) onClearSearch()
                     },
                     label = { Text("楽曲名、アーティスト名、または YouTube URL") },
-                    placeholder = { Text("例: YOASOBI アイドル / https://...") },
+                    placeholder = { Text("検索キーワード または YouTube URLを入力") },
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Default.Search,
@@ -267,7 +266,7 @@ fun UrlSearchScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Direct URL Input Card
+        // Direct URL Input Preview Card
         if (videoId != null) {
             Card(
                 modifier = Modifier
@@ -358,7 +357,7 @@ fun UrlSearchScreen(
             }
         }
 
-        // Search Results Section
+        // Search Results List
         if (searchResults.isNotEmpty()) {
             Row(
                 modifier = Modifier
@@ -465,56 +464,6 @@ fun UrlSearchScreen(
                                 Text("追加", style = MaterialTheme.typography.labelMedium)
                             }
                         }
-                    }
-                }
-            }
-        } else if (videoId == null && searchInput.isBlank()) {
-            // Sample Keywords
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 16.dp)
-            ) {
-                Text(
-                    text = "人気キーワードで検索",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = {
-                            searchInput = "YOASOBI"
-                            onSearch("YOASOBI")
-                        },
-                        shape = RoundedCornerShape(20.dp)
-                    ) {
-                        Text("YOASOBI")
-                    }
-
-                    OutlinedButton(
-                        onClick = {
-                            searchInput = "Ado"
-                            onSearch("Ado")
-                        },
-                        shape = RoundedCornerShape(20.dp)
-                    ) {
-                        Text("Ado")
-                    }
-
-                    OutlinedButton(
-                        onClick = {
-                            searchInput = "Official髭男dism"
-                            onSearch("Official髭男dism")
-                        },
-                        shape = RoundedCornerShape(20.dp)
-                    ) {
-                        Text("髭男")
                     }
                 }
             }

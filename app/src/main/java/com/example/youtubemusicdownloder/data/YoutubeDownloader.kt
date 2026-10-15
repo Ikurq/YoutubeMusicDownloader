@@ -17,6 +17,13 @@ object YoutubeDownloader {
         "(?:v=|/shorts/|/embed/|youtu\\.be/|v/)([a-zA-Z0-9_-]{11})"
     )
 
+    private val INVIDIOUS_INSTANCES = listOf(
+        "https://invidious.f5.si",
+        "https://yt.drgns.space",
+        "https://invidious.lunar.icu",
+        "https://invidious.flokinet.to"
+    )
+
     fun extractVideoId(url: String): String? {
         val matcher = YOUTUBE_ID_PATTERN.matcher(url)
         return if (matcher.find()) {
@@ -33,66 +40,97 @@ object YoutubeDownloader {
     }
 
     suspend fun fetchDirectAudioUrl(videoId: String): String? = withContext(Dispatchers.IO) {
-        val clients = listOf(
-            Pair("ANDROID_VR", "1.53.22"),
-            Pair("ANDROID_UNPLUGGED", "1.0"),
-            Pair("ANDROID_EMBEDDED_PLAYER", "1.0")
-        )
+        // 1. Try InnerTube API
+        try {
+            val url = URL("https://www.youtube.com/youtubei/v1/player")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.connectTimeout = 6000
+            conn.readTimeout = 6000
+            conn.doOutput = true
 
-        for ((clientName, clientVersion) in clients) {
-            try {
-                val url = URL("https://www.youtube.com/youtubei/v1/player")
-                val conn = url.openConnection() as HttpURLConnection
-                conn.requestMethod = "POST"
-                conn.setRequestProperty("Content-Type", "application/json")
-                conn.connectTimeout = 8000
-                conn.readTimeout = 8000
-                conn.doOutput = true
-
-                val jsonBody = JSONObject().apply {
-                    put("videoId", videoId)
-                    val contextObj = JSONObject().apply {
-                        val clientObj = JSONObject().apply {
-                            put("clientName", clientName)
-                            put("clientVersion", clientVersion)
-                        }
-                        put("client", clientObj)
+            val jsonBody = JSONObject().apply {
+                put("videoId", videoId)
+                val contextObj = JSONObject().apply {
+                    val clientObj = JSONObject().apply {
+                        put("clientName", "ANDROID_VR")
+                        put("clientVersion", "1.53.22")
                     }
-                    put("context", contextObj)
+                    put("client", clientObj)
                 }
+                put("context", contextObj)
+            }
 
-                conn.outputStream.use { os ->
-                    os.write(jsonBody.toString().toByteArray(Charsets.UTF_8))
+            conn.outputStream.use { os ->
+                os.write(jsonBody.toString().toByteArray(Charsets.UTF_8))
+            }
+
+            if (conn.responseCode == 200) {
+                val responseStr = conn.inputStream.bufferedReader().use { it.readText() }
+                val json = JSONObject(responseStr)
+                val status = json.optJSONObject("playabilityStatus")?.optString("status")
+
+                if (status == "OK") {
+                    val streamingData = json.optJSONObject("streamingData")
+                    val adaptiveFormats = streamingData?.optJSONArray("adaptiveFormats")
+                    if (adaptiveFormats != null) {
+                        var bestAudioUrl: String? = null
+                        var highestBitrate = 0
+                        for (i in 0 until adaptiveFormats.length()) {
+                            val format = adaptiveFormats.getJSONObject(i)
+                            val mimeType = format.optString("mimeType")
+                            val audioUrl = format.optString("url")
+                            val bitrate = format.optInt("bitrate", 0)
+
+                            if (mimeType.contains("audio") && audioUrl.isNotBlank()) {
+                                if (bitrate > highestBitrate) {
+                                    highestBitrate = bitrate
+                                    bestAudioUrl = audioUrl
+                                }
+                            }
+                        }
+                        if (bestAudioUrl != null) {
+                            return@withContext bestAudioUrl
+                        }
+                    }
                 }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        // 2. Fallback to Invidious public instances
+        for (instanceHost in INVIDIOUS_INSTANCES) {
+            try {
+                val apiUrl = URL("$instanceHost/api/v1/videos/$videoId")
+                val conn = apiUrl.openConnection() as HttpURLConnection
+                conn.requestMethod = "GET"
+                conn.connectTimeout = 5000
+                conn.readTimeout = 5000
 
                 if (conn.responseCode == 200) {
                     val responseStr = conn.inputStream.bufferedReader().use { it.readText() }
                     val json = JSONObject(responseStr)
-                    val playabilityStatus = json.optJSONObject("playabilityStatus")
-                    val status = playabilityStatus?.optString("status")
+                    val adaptiveFormats = json.optJSONArray("adaptiveFormats")
+                    if (adaptiveFormats != null) {
+                        var bestAudioUrl: String? = null
+                        var highestBitrate = 0
+                        for (i in 0 until adaptiveFormats.length()) {
+                            val format = adaptiveFormats.getJSONObject(i)
+                            val mimeType = format.optString("type")
+                            val audioUrl = format.optString("url")
+                            val bitrate = format.optInt("bitrate", 0)
 
-                    if (status == "OK") {
-                        val streamingData = json.optJSONObject("streamingData")
-                        val adaptiveFormats = streamingData?.optJSONArray("adaptiveFormats")
-                        if (adaptiveFormats != null) {
-                            var bestAudioUrl: String? = null
-                            var highestBitrate = 0
-                            for (i in 0 until adaptiveFormats.length()) {
-                                val format = adaptiveFormats.getJSONObject(i)
-                                val mimeType = format.optString("mimeType")
-                                val audioUrl = format.optString("url")
-                                val bitrate = format.optInt("bitrate", 0)
-
-                                if (mimeType.contains("audio") && audioUrl.isNotBlank()) {
-                                    if (bitrate > highestBitrate) {
-                                        highestBitrate = bitrate
-                                        bestAudioUrl = audioUrl
-                                    }
+                            if (mimeType.contains("audio") && audioUrl.isNotBlank()) {
+                                if (bitrate > highestBitrate) {
+                                    highestBitrate = bitrate
+                                    bestAudioUrl = audioUrl
                                 }
                             }
-                            if (bestAudioUrl != null) {
-                                return@withContext bestAudioUrl
-                            }
+                        }
+                        if (bestAudioUrl != null) {
+                            return@withContext bestAudioUrl
                         }
                     }
                 }
@@ -100,6 +138,7 @@ object YoutubeDownloader {
                 e.printStackTrace()
             }
         }
+
         return@withContext null
     }
 
@@ -132,7 +171,6 @@ object YoutubeDownloader {
         val finalTitle = if (!customTitle.isNullOrBlank()) customTitle else metadata.songTitle
         val thumbnailUrl = videoId?.let { getThumbnailUrl(it) } ?: ""
 
-        // Extract REAL direct YouTube audio stream URL
         val directAudioUrl = if (videoId != null) {
             fetchDirectAudioUrl(videoId) ?: ""
         } else if (cleanUrl.endsWith(".mp3") || cleanUrl.endsWith(".m4a") || cleanUrl.endsWith(".aac") || cleanUrl.endsWith(".webm")) {
@@ -159,7 +197,7 @@ object YoutubeDownloader {
         }
 
         if (streamUrl.isBlank()) {
-            throw IllegalStateException("YouTube 音声ストリームの取得に失敗しました。URLをご確認ください。")
+            throw IllegalStateException("YouTube 音声ストリームの取得に失敗しました。動画URLをご確認ください。")
         }
 
         val musicDir = context.getExternalFilesDir("Music") ?: context.filesDir
@@ -186,7 +224,7 @@ object YoutubeDownloader {
                 }
             }
         } else {
-            throw IllegalStateException("ダウンロードサーバーからの応答エラー: HTTP ${connection.responseCode}")
+            throw IllegalStateException("ダウンロードサーバーエラー: HTTP ${connection.responseCode}")
         }
 
         outputFile

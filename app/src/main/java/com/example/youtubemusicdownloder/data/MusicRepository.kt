@@ -21,9 +21,7 @@ class MusicRepository(private val context: Context) {
     fun loadTracks(): List<Track> {
         val jsonStr = prefs.getString("saved_tracks", null)
         if (jsonStr.isNullOrEmpty()) {
-            val initial = getInitialDemoTracks()
-            saveTracks(initial)
-            return initial
+            return emptyList()
         }
 
         val list = mutableListOf<Track>()
@@ -31,14 +29,22 @@ class MusicRepository(private val context: Context) {
             val array = JSONArray(jsonStr)
             for (i in 0 until array.length()) {
                 val obj = array.getJSONObject(i)
+                val id = obj.optString("id")
+                val audioUrl = obj.optString("audioUrl")
+
+                // Filter out old SoundHelix/demo dummy tracks
+                if (id.startsWith("demo_") || audioUrl.contains("soundhelix.com")) {
+                    continue
+                }
+
                 list.add(
                     Track(
-                        id = obj.optString("id"),
+                        id = id,
                         title = obj.optString("title"),
                         artist = obj.optString("artist", "YouTube Artist"),
                         album = obj.optString("album", "Single"),
                         youtubeUrl = obj.optString("youtubeUrl"),
-                        audioUrl = obj.optString("audioUrl"),
+                        audioUrl = if (audioUrl.contains("soundhelix.com")) "" else audioUrl,
                         thumbnailUrl = obj.optString("thumbnailUrl"),
                         durationMs = obj.optLong("durationMs"),
                         localFilePath = obj.optString("localFilePath").ifEmpty { null },
@@ -50,12 +56,16 @@ class MusicRepository(private val context: Context) {
         } catch (e: Exception) {
             e.printStackTrace()
         }
+
+        // Save cleaned list if any dummy tracks were purged
+        saveTracks(list)
         return list
     }
 
     fun saveTracks(tracks: List<Track>) {
+        val cleanList = tracks.filter { !it.id.startsWith("demo_") && !it.audioUrl.contains("soundhelix.com") }
         val array = JSONArray()
-        for (track in tracks) {
+        for (track in cleanList) {
             val obj = JSONObject()
             obj.put("id", track.id)
             obj.put("title", track.title)
@@ -76,9 +86,7 @@ class MusicRepository(private val context: Context) {
     fun loadPlaylists(): List<Playlist> {
         val jsonStr = prefs.getString("saved_playlists", null)
         if (jsonStr.isNullOrEmpty()) {
-            val initial = getInitialDemoPlaylists()
-            savePlaylists(initial)
-            return initial
+            return emptyList()
         }
 
         val list = mutableListOf<Playlist>()
@@ -90,7 +98,10 @@ class MusicRepository(private val context: Context) {
                 val trackIds = mutableListOf<String>()
                 if (trackIdsArray != null) {
                     for (j in 0 until trackIdsArray.length()) {
-                        trackIds.add(trackIdsArray.getString(j))
+                        val tId = trackIdsArray.getString(j)
+                        if (!tId.startsWith("demo_")) {
+                            trackIds.add(tId)
+                        }
                     }
                 }
                 list.add(
@@ -115,56 +126,11 @@ class MusicRepository(private val context: Context) {
             obj.put("id", pl.id)
             obj.put("name", pl.name)
             val trackIdsArr = JSONArray()
-            pl.trackIds.forEach { trackIdsArr.put(it) }
+            pl.trackIds.filter { !it.startsWith("demo_") }.forEach { trackIdsArr.put(it) }
             obj.put("trackIds", trackIdsArr)
             obj.put("createdAt", pl.createdAt)
             array.put(obj)
         }
         prefs.edit().putString("saved_playlists", array.toString()).apply()
-    }
-
-    private fun getInitialDemoTracks(): List<Track> {
-        return listOf(
-            Track(
-                id = "demo_1",
-                title = "Cyberpunk Beats",
-                artist = "SynthWave Unit",
-                album = "Future Neon",
-                youtubeUrl = "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-                audioUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
-                thumbnailUrl = "https://img.youtube.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
-                durationMs = 372000L
-            ),
-            Track(
-                id = "demo_2",
-                title = "Chill Out Groove",
-                artist = "LoFi Lounge",
-                album = "Midnight Session",
-                youtubeUrl = "https://www.youtube.com/watch?v=kJQP7kiw5Fk",
-                audioUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
-                thumbnailUrl = "https://img.youtube.com/vi/kJQP7kiw5Fk/hqdefault.jpg",
-                durationMs = 423000L
-            ),
-            Track(
-                id = "demo_3",
-                title = "Acoustic Melody",
-                artist = "Sunset Trio",
-                album = "Acoustic Journey",
-                youtubeUrl = "https://www.youtube.com/watch?v=3JZ_D3ELwOQ",
-                audioUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3",
-                thumbnailUrl = "https://img.youtube.com/vi/3JZ_D3ELwOQ/hqdefault.jpg",
-                durationMs = 350000L
-            )
-        )
-    }
-
-    private fun getInitialDemoPlaylists(): List<Playlist> {
-        return listOf(
-            Playlist(
-                id = "pl_favorites",
-                name = "お気に入り (Favorites)",
-                trackIds = listOf("demo_1", "demo_2", "demo_3")
-            )
-        )
     }
 }
