@@ -4,18 +4,13 @@ import android.content.Context
 import android.os.Environment
 import com.example.youtubemusicdownloder.model.Track
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
-import java.io.RandomAccessFile
 import java.net.HttpURLConnection
 import java.net.URL
-import java.util.concurrent.atomic.AtomicLong
 import java.util.regex.Pattern
 
 object YoutubeDownloader {
@@ -70,14 +65,14 @@ object YoutubeDownloader {
     }
 
     suspend fun fetchDirectAudioUrl(videoId: String): String? = withContext(Dispatchers.IO) {
-        // 1. InnerTube API
+        // 1. Try InnerTube API (ANDROID_VR client)
         try {
             val url = URL("https://www.youtube.com/youtubei/v1/player")
             val conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "POST"
             conn.setRequestProperty("Content-Type", "application/json")
-            conn.connectTimeout = 5000
-            conn.readTimeout = 5000
+            conn.connectTimeout = 6000
+            conn.readTimeout = 6000
             conn.doOutput = true
 
             val jsonBody = JSONObject().apply {
@@ -130,14 +125,14 @@ object YoutubeDownloader {
             e.printStackTrace()
         }
 
-        // 2. Invidious fallback nodes
+        // 2. Try Invidious nodes
         for (node in FALLBACK_INVIDIOUS_NODES) {
             try {
                 val apiUrl = URL("$node/api/v1/videos/$videoId")
                 val conn = apiUrl.openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"
-                conn.connectTimeout = 4000
-                conn.readTimeout = 4000
+                conn.connectTimeout = 5000
+                conn.readTimeout = 5000
 
                 if (conn.responseCode == 200) {
                     val responseStr = conn.inputStream.bufferedReader().use { it.readText() }
@@ -169,7 +164,7 @@ object YoutubeDownloader {
             }
         }
 
-        // 3. Dynamic fallback
+        // 3. Dynamic Invidious instances
         try {
             val listUrl = URL("https://api.invidious.io/instances.json?sort_by=type,health")
             val conn = listUrl.openConnection() as HttpURLConnection
@@ -239,25 +234,12 @@ object YoutubeDownloader {
             description = officialData.albumName
         }
 
-        val metadataDeferred = async {
-            OfficialMusicResolver.resolveOfficialMetadata(
-                rawTitle = rawTitle,
-                channelTitle = channelTitle,
-                description = description,
-                apiKey = apiKey
-            )
-        }
-
-        val audioUrlDeferred = async {
-            if (videoId != null) {
-                fetchDirectAudioUrl(videoId) ?: ""
-            } else if (cleanUrl.endsWith(".mp3") || cleanUrl.endsWith(".m4a") || cleanUrl.endsWith(".aac") || cleanUrl.endsWith(".webm")) {
-                cleanUrl
-            } else ""
-        }
-
-        val metadata = metadataDeferred.await()
-        val directAudioUrl = audioUrlDeferred.await()
+        val metadata = OfficialMusicResolver.resolveOfficialMetadata(
+            rawTitle = rawTitle,
+            channelTitle = channelTitle,
+            description = description,
+            apiKey = apiKey
+        )
 
         val finalTitle = if (!customTitle.isNullOrBlank()) customTitle else metadata.songTitle
         val thumbnailUrl = if (metadata.highResCoverUrl.isNotBlank()) {
@@ -271,7 +253,7 @@ object YoutubeDownloader {
             artist = metadata.unitArtist,
             album = metadata.albumName,
             youtubeUrl = cleanUrl,
-            audioUrl = directAudioUrl,
+            audioUrl = "", // Fresh URL will be resolved at download time
             thumbnailUrl = thumbnailUrl,
             durationMs = 210000L
         )
@@ -282,19 +264,22 @@ object YoutubeDownloader {
         track: Track,
         onProgress: ((percent: Int, downloadedBytes: Long, totalBytes: Long) -> Unit)? = null
     ): File = withContext(Dispatchers.IO) {
-        val videoId = extractVideoId(track.youtubeUrl)
-        var streamUrl = track.audioUrl
+        val videoId = extractVideoId(track.youtubeUrl) ?: extractVideoId(track.audioUrl)
+
+        var streamUrl = if (videoId != null) {
+            fetchDirectAudioUrl(videoId) ?: track.audioUrl
+        } else track.audioUrl
 
         if (streamUrl.isBlank() && videoId != null) {
             streamUrl = fetchDirectAudioUrl(videoId) ?: ""
         }
 
         if (streamUrl.isBlank()) {
-            throw IllegalStateException("YouTube 音声ストリームの取得に失敗しました。URLをご確認ください。")
+            throw IllegalStateException("YouTube 音声ストリームの取得に失敗しました。動画URLまたはネットワークをご確認ください。")
         }
 
         val primaryDir = getPrimaryStorageDir(context)
-        val cleanTitle = track.title.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim()
+        val cleanTitle = track.title.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().ifBlank { "track" }
         val safeFileName = "${cleanTitle}_${track.id.take(8)}.m4a"
         val outputFile = File(primaryDir, safeFileName)
 
@@ -304,103 +289,68 @@ object YoutubeDownloader {
             return@withContext outputFile
         }
 
-        // Get Content-Length & Check Range support
-        var totalLength = -1L
-        try {
-            val headConn = URL(streamUrl).openConnection() as HttpURLConnection
-            headConn.requestMethod = "HEAD"
-            headConn.connectTimeout = 8000
-            headConn.readTimeout = 8000
-            headConn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36")
-            if (headConn.responseCode in 200..299) {
-                totalLength = headConn.contentLengthLong
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        var attempts = 0
+        var success = false
+        var lastError: Exception? = null
 
-        // High-Speed 4-Thread Parallel Download if file > 1MB and length known
-        if (totalLength > 1024 * 1024) {
+        while (attempts < 3 && !success) {
+            attempts++
             try {
-                val numChunks = 4
-                val chunkSize = totalLength / numChunks
-                val raf = RandomAccessFile(outputFile, "rw")
-                raf.setLength(totalLength)
-                raf.close()
+                val activeUrl = if (attempts > 1 && videoId != null) {
+                    fetchDirectAudioUrl(videoId) ?: streamUrl
+                } else streamUrl
 
-                val downloadedBytesAtomic = AtomicLong(0L)
+                val conn = URL(activeUrl).openConnection() as HttpURLConnection
+                conn.instanceFollowRedirects = true
+                conn.connectTimeout = 12000
+                conn.readTimeout = 25000
+                conn.requestMethod = "GET"
+                conn.setRequestProperty(
+                    "User-Agent",
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                )
+                conn.setRequestProperty("Accept", "*/*")
+                conn.setRequestProperty("Referer", "https://www.youtube.com/")
 
-                coroutineScope {
-                    val jobs = (0 until numChunks).map { index ->
-                        async(Dispatchers.IO) {
-                            val startByte = index * chunkSize
-                            val endByte = if (index == numChunks - 1) totalLength - 1 else (index + 1) * chunkSize - 1
+                val responseCode = conn.responseCode
+                if (responseCode in 200..299) {
+                    val totalLength = conn.contentLengthLong.coerceAtLeast(1L)
 
-                            val chunkConn = URL(streamUrl).openConnection() as HttpURLConnection
-                            chunkConn.connectTimeout = 10000
-                            chunkConn.readTimeout = 20000
-                            chunkConn.setRequestProperty("Range", "bytes=$startByte-$endByte")
-                            chunkConn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36")
+                    conn.inputStream.use { input ->
+                        FileOutputStream(outputFile).use { output ->
+                            val buffer = ByteArray(64 * 1024) // 64KB High-Speed Buffer
+                            var bytesRead: Int
+                            var totalRead = 0L
 
-                            val chunkRaf = RandomAccessFile(outputFile, "rw")
-                            chunkRaf.seek(startByte)
-
-                            chunkConn.inputStream.use { input ->
-                                val buffer = ByteArray(64 * 1024) // 64KB High-Speed Buffer
-                                var bytesRead: Int
-                                while (input.read(buffer).also { bytesRead = it } != -1) {
-                                    chunkRaf.write(buffer, 0, bytesRead)
-                                    val currentTotal = downloadedBytesAtomic.addAndGet(bytesRead.toLong())
-                                    val percent = ((currentTotal * 100) / totalLength).toInt().coerceIn(0, 100)
-                                    onProgress?.invoke(percent, currentTotal, totalLength)
-                                }
+                            while (input.read(buffer).also { bytesRead = it } != -1) {
+                                output.write(buffer, 0, bytesRead)
+                                totalRead += bytesRead
+                                val percent = ((totalRead * 100) / totalLength).toInt().coerceIn(0, 100)
+                                onProgress?.invoke(percent, totalRead, totalLength)
                             }
-                            chunkRaf.close()
                         }
                     }
-                    jobs.awaitAll()
+                    success = true
+                } else if (responseCode == 403 || responseCode == 410) {
+                    if (videoId != null) {
+                        val freshUrl = fetchDirectAudioUrl(videoId)
+                        if (freshUrl != null) streamUrl = freshUrl
+                    }
+                } else {
+                    throw IllegalStateException("HTTP Error $responseCode")
                 }
-
-                copyToPublicMusicDir(outputFile, "$cleanTitle.m4a")
-                return@withContext outputFile
             } catch (e: Exception) {
+                lastError = e
                 e.printStackTrace()
             }
         }
 
-        // Sequential High-Buffer Fallback
-        val connection = URL(streamUrl).openConnection() as HttpURLConnection
-        connection.connectTimeout = 15000
-        connection.readTimeout = 30000
-        connection.requestMethod = "GET"
-        connection.setRequestProperty(
-            "User-Agent",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"
-        )
-
-        if (connection.responseCode in 200..299) {
-            val fileLength = connection.contentLengthLong.coerceAtLeast(1L)
-
-            connection.inputStream.use { input ->
-                FileOutputStream(outputFile).use { output ->
-                    val buffer = ByteArray(64 * 1024) // 64KB High-Speed Buffer
-                    var bytesRead: Int
-                    var totalRead = 0L
-
-                    while (input.read(buffer).also { bytesRead = it } != -1) {
-                        output.write(buffer, 0, bytesRead)
-                        totalRead += bytesRead
-                        val percent = ((totalRead * 100) / fileLength).toInt().coerceIn(0, 100)
-                        onProgress?.invoke(percent, totalRead, fileLength)
-                    }
-                }
-            }
-
-            copyToPublicMusicDir(outputFile, "$cleanTitle.m4a")
-        } else {
-            throw IllegalStateException("ダウンロードサーバーエラー: HTTP ${connection.responseCode}")
+        if (!success || !outputFile.exists() || outputFile.length() == 0L) {
+            if (outputFile.exists()) outputFile.delete()
+            throw IllegalStateException("ダウンロード処理に失敗しました (${lastError?.message ?: "ネットワーク接続エラー"})")
         }
 
+        copyToPublicMusicDir(outputFile, "$cleanTitle.m4a")
         outputFile
     }
 }
