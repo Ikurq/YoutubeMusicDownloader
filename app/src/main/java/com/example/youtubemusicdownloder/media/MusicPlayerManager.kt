@@ -47,6 +47,20 @@ class MusicPlayerManager(private val context: Context) {
                     _currentPositionMs.value = player.currentPosition.toLong()
                     _durationMs.value = player.duration.toLong().coerceAtLeast(1L)
                     handler.postDelayed(this, 500)
+
+                    // Periodically sync position with MediaSession
+                    _currentTrack.value?.let { tr ->
+                        MusicPlaybackService.startService(
+                            context = context,
+                            title = tr.title,
+                            artist = tr.artist,
+                            album = tr.album,
+                            isPlaying = true,
+                            positionMs = _currentPositionMs.value,
+                            durationMs = _durationMs.value,
+                            artworkUrl = tr.thumbnailUrl
+                        )
+                    }
                 }
             }
         }
@@ -75,7 +89,6 @@ class MusicPlayerManager(private val context: Context) {
         _currentTrack.value = track
         releasePlayer()
 
-        // Pure offline playback check
         val localFile = track.localFilePath?.let { File(it) }
         if (localFile == null || !localFile.exists() || localFile.length() == 0L) {
             _isPlaying.value = false
@@ -102,10 +115,14 @@ class MusicPlayerManager(private val context: Context) {
                 handler.post(progressRunnable)
 
                 MusicPlaybackService.startService(
-                    context,
-                    track.title,
-                    track.artist,
-                    true
+                    context = context,
+                    title = track.title,
+                    artist = track.artist,
+                    album = track.album,
+                    isPlaying = true,
+                    positionMs = 0L,
+                    durationMs = _durationMs.value,
+                    artworkUrl = track.thumbnailUrl
                 )
             }
 
@@ -137,12 +154,30 @@ class MusicPlayerManager(private val context: Context) {
             player.pause()
             _isPlaying.value = false
             handler.removeCallbacks(progressRunnable)
-            MusicPlaybackService.startService(context, track.title, track.artist, false)
+            MusicPlaybackService.startService(
+                context = context,
+                title = track.title,
+                artist = track.artist,
+                album = track.album,
+                isPlaying = false,
+                positionMs = _currentPositionMs.value,
+                durationMs = _durationMs.value,
+                artworkUrl = track.thumbnailUrl
+            )
         } else {
             player.start()
             _isPlaying.value = true
             handler.post(progressRunnable)
-            MusicPlaybackService.startService(context, track.title, track.artist, true)
+            MusicPlaybackService.startService(
+                context = context,
+                title = track.title,
+                artist = track.artist,
+                album = track.album,
+                isPlaying = true,
+                positionMs = _currentPositionMs.value,
+                durationMs = _durationMs.value,
+                artworkUrl = track.thumbnailUrl
+            )
         }
     }
 
@@ -150,6 +185,18 @@ class MusicPlayerManager(private val context: Context) {
         mediaPlayer?.let { player ->
             player.seekTo(positionMs.toInt())
             _currentPositionMs.value = positionMs
+            _currentTrack.value?.let { track ->
+                MusicPlaybackService.startService(
+                    context = context,
+                    title = track.title,
+                    artist = track.artist,
+                    album = track.album,
+                    isPlaying = _isPlaying.value,
+                    positionMs = positionMs,
+                    durationMs = _durationMs.value,
+                    artworkUrl = track.thumbnailUrl
+                )
+            }
         }
     }
 
