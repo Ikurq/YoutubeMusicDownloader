@@ -87,6 +87,7 @@ fun MainScreen(
     val tracks by viewModel.tracks.collectAsState()
     val playlists by viewModel.playlists.collectAsState()
     val apiKey by viewModel.apiKey.collectAsState()
+    val antigravityServerUrl by viewModel.antigravityServerUrl.collectAsState()
     val searchResults by viewModel.searchResults.collectAsState()
     val relatedTracks by viewModel.relatedTracks.collectAsState()
     val isSearching by viewModel.isSearching.collectAsState()
@@ -252,12 +253,14 @@ fun MainScreen(
                 when (selectedTab) {
                     0 -> UrlSearchScreen(
                         apiKey = apiKey,
+                        antigravityServerUrl = antigravityServerUrl,
                         searchResults = searchResults,
                         isSearching = isSearching,
                         isDownloading = isQueueProcessing,
                         onSearch = { viewModel.searchYouTube(it) },
                         onClearSearch = { viewModel.clearSearchResults() },
                         onSaveApiKey = { viewModel.saveApiKey(it) },
+                        onSaveAntigravityServerUrl = { viewModel.saveAntigravityServerUrl(it) },
                         onAddTrack = { url, title ->
                             viewModel.addToDownloadQueue(url, title ?: "YouTube Track", title)
                         }

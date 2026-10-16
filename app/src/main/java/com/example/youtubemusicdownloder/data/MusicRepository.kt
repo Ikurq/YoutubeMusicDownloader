@@ -18,6 +18,14 @@ class MusicRepository(private val context: Context) {
         prefs.edit().putString("google_api_key", key.trim()).apply()
     }
 
+    fun getAntigravityServerUrl(): String {
+        return prefs.getString("antigravity_server_url", "") ?: ""
+    }
+
+    fun saveAntigravityServerUrl(url: String) {
+        prefs.edit().putString("antigravity_server_url", url.trim()).apply()
+    }
+
     fun loadTracks(): List<Track> {
         val jsonStr = prefs.getString("saved_tracks", null)
         if (jsonStr.isNullOrEmpty()) {
@@ -32,7 +40,6 @@ class MusicRepository(private val context: Context) {
                 val id = obj.optString("id")
                 val audioUrl = obj.optString("audioUrl")
 
-                // Filter out old SoundHelix/demo dummy tracks
                 if (id.startsWith("demo_") || audioUrl.contains("soundhelix.com")) {
                     continue
                 }
@@ -57,7 +64,6 @@ class MusicRepository(private val context: Context) {
             e.printStackTrace()
         }
 
-        // Save cleaned list if any dummy tracks were purged
         saveTracks(list)
         return list
     }

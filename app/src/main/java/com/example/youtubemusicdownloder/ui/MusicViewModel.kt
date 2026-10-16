@@ -39,6 +39,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private val _apiKey = MutableStateFlow("")
     val apiKey: StateFlow<String> = _apiKey.asStateFlow()
 
+    private val _antigravityServerUrl = MutableStateFlow("")
+    val antigravityServerUrl: StateFlow<String> = _antigravityServerUrl.asStateFlow()
+
     private val _searchResults = MutableStateFlow<List<SearchResultItem>>(emptyList())
     val searchResults: StateFlow<List<SearchResultItem>> = _searchResults.asStateFlow()
 
@@ -95,10 +98,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         _tracks.value = repository.loadTracks()
         _playlists.value = repository.loadPlaylists()
         _apiKey.value = repository.getApiKey()
+        _antigravityServerUrl.value = repository.getAntigravityServerUrl()
     }
 
     fun addToDownloadQueue(url: String, title: String, customTitle: String? = null) {
-        downloadQueueManager.addToQueue(url, title, customTitle, _apiKey.value)
+        downloadQueueManager.addToQueue(url, title, customTitle, _apiKey.value, _antigravityServerUrl.value)
     }
 
     fun addMultipleToDownloadQueue(items: List<Pair<String, String>>) {
@@ -227,6 +231,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         repository.saveApiKey(key)
         _apiKey.value = key.trim()
         _statusMessage.value = "Google / Gemini APIキーを保存しました"
+    }
+
+    fun saveAntigravityServerUrl(url: String) {
+        repository.saveAntigravityServerUrl(url)
+        _antigravityServerUrl.value = url.trim()
+        _statusMessage.value = "Antigravity サーバー URLを保存しました"
     }
 
     fun clearStatusMessage() {

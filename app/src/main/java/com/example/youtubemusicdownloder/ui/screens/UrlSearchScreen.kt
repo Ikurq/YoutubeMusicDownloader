@@ -21,6 +21,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.MusicNote
@@ -61,18 +62,21 @@ import com.example.youtubemusicdownloder.data.YoutubeDownloader
 @Composable
 fun UrlSearchScreen(
     apiKey: String,
+    antigravityServerUrl: String,
     searchResults: List<SearchResultItem>,
     isSearching: Boolean,
     isDownloading: Boolean,
     onSearch: (query: String) -> Unit,
     onClearSearch: () -> Unit,
     onSaveApiKey: (key: String) -> Unit,
+    onSaveAntigravityServerUrl: (url: String) -> Unit,
     onAddTrack: (url: String, customTitle: String?) -> Unit
 ) {
     var searchInput by remember { mutableStateOf("") }
     var customTitle by remember { mutableStateOf("") }
     var showApiKeySettings by remember { mutableStateOf(false) }
     var inputApiKey by remember(apiKey) { mutableStateOf(apiKey) }
+    var inputServerUrl by remember(antigravityServerUrl) { mutableStateOf(antigravityServerUrl) }
 
     val keyboardController = LocalSoftwareKeyboardController.current
     val videoId = remember(searchInput) { YoutubeDownloader.extractVideoId(searchInput) }
@@ -114,13 +118,13 @@ fun UrlSearchScreen(
                 Icon(
                     imageVector = Icons.Default.Settings,
                     contentDescription = "API設定",
-                    tint = if (apiKey.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    tint = if (apiKey.isNotBlank() || antigravityServerUrl.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(10.dp)
                 )
             }
         }
 
-        // Google API Key Card
+        // Settings Modal Card
         AnimatedVisibility(visible = showApiKeySettings) {
             Card(
                 modifier = Modifier
@@ -132,12 +136,12 @@ fun UrlSearchScreen(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = "Google Data API v3 設定",
+                        text = "API & サーバー設定",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "APIキーを設定すると公式データで検索・Gemini楽曲整形が行えます。",
+                        text = "Google / Gemini APIキーや、カスタム Antigravity / Cobalt サーバーを設定できます。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(vertical = 4.dp)
@@ -146,23 +150,41 @@ fun UrlSearchScreen(
                     OutlinedTextField(
                         value = inputApiKey,
                         onValueChange = { inputApiKey = it },
-                        label = { Text("Google API キー") },
+                        label = { Text("Google / Gemini API キー") },
                         leadingIcon = { Icon(Icons.Default.Key, contentDescription = null) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp)
                     )
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
-                    TextButton(
-                        onClick = {
-                            onSaveApiKey(inputApiKey)
-                            showApiKeySettings = false
-                        },
-                        modifier = Modifier.align(Alignment.End)
+                    OutlinedTextField(
+                        value = inputServerUrl,
+                        onValueChange = { inputServerUrl = it },
+                        label = { Text("Antigravity / Cobalt サーバー URL (任意)") },
+                        placeholder = { Text("例: https://my-antigravity-server.com") },
+                        leadingIcon = { Icon(Icons.Default.Dns, contentDescription = null) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
                     ) {
-                        Text("保存", fontWeight = FontWeight.Bold)
+                        TextButton(
+                            onClick = {
+                                onSaveApiKey(inputApiKey)
+                                onSaveAntigravityServerUrl(inputServerUrl)
+                                showApiKeySettings = false
+                            }
+                        ) {
+                            Text("設定を保存", fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }

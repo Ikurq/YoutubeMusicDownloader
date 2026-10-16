@@ -87,10 +87,45 @@ object YoutubeDownloader {
         return@withContext null
     }
 
-    suspend fun fetchDirectAudioUrl(videoId: String): String? = withContext(Dispatchers.IO) {
+    suspend fun fetchDirectAudioUrl(videoId: String, customServerUrl: String? = null): String? = withContext(Dispatchers.IO) {
         val errors = mutableListOf<String>()
 
-        // 1. Try Invidious primary nodes first (bypasses LOGIN_REQUIRED)
+        // 1. Try Custom Antigravity / Cobalt Server if configured
+        if (!customServerUrl.isNullOrBlank()) {
+            try {
+                val serverUrl = if (customServerUrl.endsWith("/")) customServerUrl else "$customServerUrl/"
+                val url = URL(serverUrl)
+                val conn = url.openConnection() as HttpURLConnection
+                conn.requestMethod = "POST"
+                conn.setRequestProperty("Content-Type", "application/json")
+                conn.setRequestProperty("Accept", "application/json")
+                conn.connectTimeout = 8000
+                conn.readTimeout = 8000
+                conn.doOutput = true
+
+                val body = JSONObject().apply {
+                    put("url", "https://www.youtube.com/watch?v=$videoId")
+                    put("downloadMode", "audio")
+                }
+
+                conn.outputStream.use { os ->
+                    os.write(body.toString().toByteArray(Charsets.UTF_8))
+                }
+
+                if (conn.responseCode in 200..299) {
+                    val resp = conn.inputStream.bufferedReader().use { it.readText() }
+                    val json = JSONObject(resp)
+                    val audioUrl = json.optString("url", "").ifBlank { json.optString("audio", "") }
+                    if (audioUrl.isNotBlank()) {
+                        return@withContext audioUrl
+                    }
+                }
+            } catch (e: Exception) {
+                errors.add("AntigravityServer: ${e.message}")
+            }
+        }
+
+        // 2. Try Invidious primary nodes (bypasses LOGIN_REQUIRED)
         for (node in PRIMARY_INVIDIOUS_NODES) {
             try {
                 val apiUrl = URL("$node/api/v1/videos/$videoId")
@@ -132,7 +167,7 @@ object YoutubeDownloader {
             }
         }
 
-        // 2. Try InnerTube API
+        // 3. Try InnerTube API
         try {
             val url = URL("https://www.youtube.com/youtubei/v1/player")
             val conn = url.openConnection() as HttpURLConnection
@@ -196,7 +231,7 @@ object YoutubeDownloader {
             errors.add("InnerTube ${e.message}")
         }
 
-        // 3. Dynamic Live Invidious Pool fallback
+        // 4. Dynamic Live Invidious Pool fallback
         try {
             val listUrl = URL("https://api.invidious.io/instances.json?sort_by=type,health")
             val conn = listUrl.openConnection() as HttpURLConnection
@@ -254,7 +289,8 @@ object YoutubeDownloader {
     suspend fun parseTrackFromUrl(
         urlInput: String,
         customTitle: String? = null,
-        apiKey: String? = null
+        apiKey: String? = null,
+        customServerUrl: String? = null
     ): Track = withContext(Dispatchers.IO) {
         val cleanUrl = urlInput.trim()
         val videoId = extractVideoId(cleanUrl)
@@ -306,16 +342,17 @@ object YoutubeDownloader {
     suspend fun downloadAudioToFile(
         context: Context,
         track: Track,
+        customServerUrl: String? = null,
         onProgress: ((percent: Int, downloadedBytes: Long, totalBytes: Long) -> Unit)? = null
     ): File = withContext(Dispatchers.IO) {
         val videoId = extractVideoId(track.youtubeUrl) ?: extractVideoId(track.audioUrl)
 
         var streamUrl = if (videoId != null) {
-            fetchDirectAudioUrl(videoId) ?: track.audioUrl
+            fetchDirectAudioUrl(videoId, customServerUrl) ?: track.audioUrl
         } else track.audioUrl
 
         if (streamUrl.isBlank() && videoId != null) {
-            streamUrl = fetchDirectAudioUrl(videoId) ?: ""
+            streamUrl = fetchDirectAudioUrl(videoId, customServerUrl) ?: ""
         }
 
         if (streamUrl.isBlank()) {
@@ -341,7 +378,7 @@ object YoutubeDownloader {
             attempts++
             try {
                 val activeUrl = if (attempts > 1 && videoId != null) {
-                    fetchDirectAudioUrl(videoId) ?: streamUrl
+                    fetchDirectAudioUrl(videoId, customServerUrl) ?: streamUrl
                 } else streamUrl
 
                 val conn = URL(activeUrl).openConnection() as HttpURLConnection
@@ -377,7 +414,7 @@ object YoutubeDownloader {
                     success = true
                 } else if (responseCode == 403 || responseCode == 410) {
                     if (videoId != null) {
-                        val freshUrl = fetchDirectAudioUrl(videoId)
+                        val freshUrl = fetchDirectAudioUrl(videoId, customServerUrl)
                         if (freshUrl != null) streamUrl = freshUrl
                     }
                     lastError = IllegalStateException("HTTP Error $responseCode (トークン期限切れ)")

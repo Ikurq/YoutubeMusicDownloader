@@ -45,7 +45,7 @@ class DownloadQueueManager(private val context: Context) {
     var onTrackDownloaded: ((track: Track) -> Unit)? = null
     var onStatusMessage: ((message: String) -> Unit)? = null
 
-    fun addToQueue(url: String, title: String, customTitle: String? = null, apiKey: String? = null) {
+    fun addToQueue(url: String, title: String, customTitle: String? = null, apiKey: String? = null, serverUrl: String? = null) {
         if (url.isBlank()) return
         val item = DownloadQueueItem(
             url = url,
@@ -54,7 +54,7 @@ class DownloadQueueManager(private val context: Context) {
         )
         _queue.value = _queue.value + item
         onStatusMessage?.invoke("「$title」をDLキューに追加しました")
-        triggerQueueProcessing(apiKey)
+        triggerQueueProcessing(apiKey, serverUrl)
     }
 
     fun addMultipleToQueue(items: List<Pair<String, String>>, apiKey: String? = null) {
@@ -85,7 +85,7 @@ class DownloadQueueManager(private val context: Context) {
         _queue.value = emptyList()
     }
 
-    private fun triggerQueueProcessing(apiKey: String?) {
+    private fun triggerQueueProcessing(apiKey: String?, serverUrl: String? = null) {
         if (_isProcessing.value) return
 
         processJob = scope.launch {
@@ -105,11 +105,12 @@ class DownloadQueueManager(private val context: Context) {
                     var track = YoutubeDownloader.parseTrackFromUrl(
                         urlInput = pendingItem.url,
                         customTitle = pendingItem.customTitle ?: pendingItem.title,
-                        apiKey = apiKey
+                        apiKey = apiKey,
+                        customServerUrl = serverUrl
                     )
 
                     // Step 2: Download audio file with live progress
-                    val file = YoutubeDownloader.downloadAudioToFile(context, track) { percent, downloaded, total ->
+                    val file = YoutubeDownloader.downloadAudioToFile(context, track, serverUrl) { percent, downloaded, total ->
                         updateItem(pendingItem.id) {
                             it.copy(
                                 progressPercent = percent,
