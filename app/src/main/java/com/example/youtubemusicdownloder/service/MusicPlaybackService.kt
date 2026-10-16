@@ -43,6 +43,7 @@ class MusicPlaybackService : Service() {
         const val EXTRA_ARTWORK_URL = "extra_artwork_url"
 
         var serviceCallback: ((action: String) -> Unit)? = null
+        var seekCallback: ((positionMs: Long) -> Unit)? = null
 
         fun startService(
             context: Context,
@@ -103,6 +104,10 @@ class MusicPlaybackService : Service() {
 
                 override fun onSkipToPrevious() {
                     serviceCallback?.invoke(ACTION_PREVIOUS)
+                }
+
+                override fun onSeekTo(pos: Long) {
+                    seekCallback?.invoke(pos)
                 }
 
                 override fun onStop() {
@@ -171,6 +176,7 @@ class MusicPlaybackService : Service() {
                 PlaybackState.ACTION_PAUSE or
                 PlaybackState.ACTION_SKIP_TO_NEXT or
                 PlaybackState.ACTION_SKIP_TO_PREVIOUS or
+                PlaybackState.ACTION_SEEK_TO or
                 PlaybackState.ACTION_STOP
             )
             .setState(stateInt, positionMs, 1.0f)

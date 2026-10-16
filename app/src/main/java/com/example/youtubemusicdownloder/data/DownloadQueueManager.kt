@@ -120,9 +120,11 @@ class DownloadQueueManager(private val context: Context) {
                         }
                     }
 
+                    val actualDuration = AudioDownloader.getAudioDurationMs(file)
                     track = track.copy(
                         localFilePath = file.absolutePath,
-                        isDownloaded = true
+                        isDownloaded = true,
+                        durationMs = if (actualDuration > 0L) actualDuration else track.durationMs
                     )
 
                     // Step 3: Complete & Notify

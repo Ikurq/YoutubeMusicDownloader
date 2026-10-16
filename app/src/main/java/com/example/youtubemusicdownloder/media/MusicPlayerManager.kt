@@ -47,20 +47,6 @@ class MusicPlayerManager(private val context: Context) {
                     _currentPositionMs.value = player.currentPosition.toLong()
                     _durationMs.value = player.duration.toLong().coerceAtLeast(1L)
                     handler.postDelayed(this, 500)
-
-                    // Periodically sync position with MediaSession
-                    _currentTrack.value?.let { tr ->
-                        MusicPlaybackService.startService(
-                            context = context,
-                            title = tr.title,
-                            artist = tr.artist,
-                            album = tr.album,
-                            isPlaying = true,
-                            positionMs = _currentPositionMs.value,
-                            durationMs = _durationMs.value,
-                            artworkUrl = tr.thumbnailUrl
-                        )
-                    }
                 }
             }
         }
@@ -72,8 +58,11 @@ class MusicPlayerManager(private val context: Context) {
                 MusicPlaybackService.ACTION_TOGGLE_PLAY -> togglePlayPause()
                 MusicPlaybackService.ACTION_NEXT -> nextTrack()
                 MusicPlaybackService.ACTION_PREVIOUS -> previousTrack()
-                MusicPlaybackService.ACTION_STOP -> releasePlayer()
+                MusicPlaybackService.ACTION_STOP -> releasePlayer(stopService = true)
             }
+        }
+        MusicPlaybackService.seekCallback = { posMs ->
+            seekTo(posMs)
         }
     }
 
@@ -87,7 +76,7 @@ class MusicPlayerManager(private val context: Context) {
         }
 
         _currentTrack.value = track
-        releasePlayer()
+        releasePlayer(stopService = false)
 
         val localFile = track.localFilePath?.let { File(it) }
         if (localFile == null || !localFile.exists() || localFile.length() == 0L) {
@@ -281,7 +270,7 @@ class MusicPlayerManager(private val context: Context) {
         }
     }
 
-    fun releasePlayer() {
+    fun releasePlayer(stopService: Boolean = true) {
         handler.removeCallbacks(progressRunnable)
         mediaPlayer?.let { player ->
             if (player.isPlaying) {
@@ -291,6 +280,8 @@ class MusicPlayerManager(private val context: Context) {
         }
         mediaPlayer = null
         _isPlaying.value = false
-        MusicPlaybackService.stopService(context)
+        if (stopService) {
+            MusicPlaybackService.stopService(context)
+        }
     }
 }

@@ -64,7 +64,6 @@ class MusicRepository(private val context: Context) {
             e.printStackTrace()
         }
 
-        saveTracks(list)
         return list
     }
 

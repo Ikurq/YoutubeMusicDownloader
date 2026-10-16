@@ -83,10 +83,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         checkForUpdates(silent = true)
 
         downloadQueueManager.onTrackDownloaded = { downloadedTrack ->
-            val currentList = _tracks.value.toMutableList()
-            currentList.add(0, downloadedTrack)
-            _tracks.value = currentList.distinctBy { it.id }
-            repository.saveTracks(currentList)
+            val updated = (_tracks.value.filter { it.id != downloadedTrack.id }).toMutableList()
+            updated.add(0, downloadedTrack)
+            _tracks.value = updated
+            repository.saveTracks(updated)
         }
 
         downloadQueueManager.onStatusMessage = { msg ->
@@ -275,6 +275,24 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteTrack(trackId: String) {
+        val trackToDelete = _tracks.value.find { it.id == trackId }
+        // 端末ストレージ上の実ファイルを安全に削除
+        trackToDelete?.localFilePath?.let { path ->
+            try {
+                val file = java.io.File(path)
+                if (file.exists()) {
+                    file.delete()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        // 削除対象が再生中の楽曲なら再生を停止
+        if (currentTrack.value?.id == trackId) {
+            playerManager.releasePlayer(stopService = true)
+        }
+
         val updatedTracks = _tracks.value.filter { it.id != trackId }
         _tracks.value = updatedTracks
         repository.saveTracks(updatedTracks)
