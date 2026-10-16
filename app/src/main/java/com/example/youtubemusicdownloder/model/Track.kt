@@ -13,5 +13,6 @@ data class Track(
     val durationMs: Long = 0L,
     val localFilePath: String? = null,
     val isDownloaded: Boolean = false,
+    val isFavorite: Boolean = false,
     val addedAt: Long = System.currentTimeMillis()
 )

@@ -56,6 +56,7 @@ class MusicRepository(private val context: Context) {
                         durationMs = obj.optLong("durationMs"),
                         localFilePath = obj.optString("localFilePath").ifEmpty { null },
                         isDownloaded = obj.optBoolean("isDownloaded"),
+                        isFavorite = obj.optBoolean("isFavorite", false),
                         addedAt = obj.optLong("addedAt")
                     )
                 )
@@ -82,6 +83,7 @@ class MusicRepository(private val context: Context) {
             obj.put("durationMs", track.durationMs)
             obj.put("localFilePath", track.localFilePath ?: "")
             obj.put("isDownloaded", track.isDownloaded)
+            obj.put("isFavorite", track.isFavorite)
             obj.put("addedAt", track.addedAt)
             array.put(obj)
         }

@@ -40,6 +40,10 @@ fun PlayerSheet(
     durationMs: Long,
     repeatMode: RepeatMode,
     isShuffle: Boolean,
+    isFavorite: Boolean = false,
+    playbackSpeed: Float = 1.0f,
+    sleepTimerMinutes: Int = 0,
+    sleepTimerRemainingSeconds: Int = 0,
     relatedTracks: List<SearchResultItem> = emptyList(),
     onPlayPauseClick: () -> Unit,
     onNextClick: () -> Unit,
@@ -47,6 +51,9 @@ fun PlayerSheet(
     onSeek: (positionMs: Long) -> Unit,
     onToggleRepeat: () -> Unit,
     onToggleShuffle: () -> Unit,
+    onToggleFavorite: () -> Unit = {},
+    onSpeedChange: (Float) -> Unit = {},
+    onSetSleepTimer: (Int) -> Unit = {},
     onAddRelatedTrack: (url: String, title: String) -> Unit,
     onCloseClick: () -> Unit
 ) {
@@ -128,12 +135,19 @@ fun PlayerSheet(
                     durationMs = durationMs,
                     repeatMode = repeatMode,
                     isShuffle = isShuffle,
+                    isFavorite = isFavorite,
+                    playbackSpeed = playbackSpeed,
+                    sleepTimerMinutes = sleepTimerMinutes,
+                    sleepTimerRemainingSeconds = sleepTimerRemainingSeconds,
                     onPlayPauseClick = onPlayPauseClick,
                     onNextClick = onNextClick,
                     onPreviousClick = onPreviousClick,
                     onSeek = onSeek,
                     onToggleRepeat = onToggleRepeat,
-                    onToggleShuffle = onToggleShuffle
+                    onToggleShuffle = onToggleShuffle,
+                    onToggleFavorite = onToggleFavorite,
+                    onSpeedChange = onSpeedChange,
+                    onSetSleepTimer = onSetSleepTimer
                 )
 
                 Spacer(modifier = Modifier.height(28.dp))

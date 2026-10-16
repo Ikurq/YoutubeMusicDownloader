@@ -13,6 +13,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlaylistAdd
@@ -48,6 +50,7 @@ fun TrackItem(
     isPlaying: Boolean = false,
     isDownloading: Boolean = false,
     onTrackClick: () -> Unit,
+    onToggleFavorite: (() -> Unit)? = null,
     onAddToPlaylistClick: (() -> Unit)? = null,
     onDownloadClick: (() -> Unit)? = null,
     onDeleteClick: (() -> Unit)? = null
@@ -160,6 +163,17 @@ fun TrackItem(
                 }
             }
 
+            if (onToggleFavorite != null) {
+                IconButton(onClick = onToggleFavorite) {
+                    Icon(
+                        imageVector = if (track.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                        contentDescription = if (track.isFavorite) "お気に入り解除" else "お気に入りに追加",
+                        tint = if (track.isFavorite) Color(0xFFE91E63) else MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
+
             Column {
                 IconButton(onClick = { showMenu = true }) {
                     Icon(
@@ -173,6 +187,22 @@ fun TrackItem(
                     expanded = showMenu,
                     onDismissRequest = { showMenu = false }
                 ) {
+                    if (onToggleFavorite != null) {
+                        DropdownMenuItem(
+                            text = { Text(if (track.isFavorite) "お気に入りを解除" else "お気に入りに追加") },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = if (track.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                    contentDescription = null,
+                                    tint = if (track.isFavorite) Color(0xFFE91E63) else MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            onClick = {
+                                showMenu = false
+                                onToggleFavorite()
+                            }
+                        )
+                    }
                     if (onAddToPlaylistClick != null) {
                         DropdownMenuItem(
                             text = { Text("プレイリストに追加") },

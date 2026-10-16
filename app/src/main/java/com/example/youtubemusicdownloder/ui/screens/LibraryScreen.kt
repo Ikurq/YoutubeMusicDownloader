@@ -11,16 +11,21 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -49,9 +54,11 @@ fun LibraryScreen(
     onDownloadClick: (track: Track) -> Unit,
     onDeleteClick: (trackId: String) -> Unit,
     onShuffleAllClick: (tracks: List<Track>) -> Unit,
-    onImportLocalFiles: (uris: List<Uri>) -> Unit
+    onImportLocalFiles: (uris: List<Uri>) -> Unit,
+    onToggleFavorite: (trackId: String) -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
+    var showOnlyFavorites by remember { mutableStateOf(false) }
 
     val audioPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetMultipleContents()
@@ -61,9 +68,12 @@ fun LibraryScreen(
         }
     }
 
-    val filteredTracks = remember(tracks, searchQuery) {
-        if (searchQuery.isBlank()) tracks
-        else tracks.filter {
+    val favoriteCount = remember(tracks) { tracks.count { it.isFavorite } }
+
+    val filteredTracks = remember(tracks, searchQuery, showOnlyFavorites) {
+        val base = if (showOnlyFavorites) tracks.filter { it.isFavorite } else tracks
+        if (searchQuery.isBlank()) base
+        else base.filter {
             it.title.contains(searchQuery, ignoreCase = true) ||
                     it.artist.contains(searchQuery, ignoreCase = true) ||
                     it.album.contains(searchQuery, ignoreCase = true)
@@ -120,7 +130,37 @@ fun LibraryScreen(
             shape = RoundedCornerShape(12.dp)
         )
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Filter Chips (All / Favorites)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            FilterChip(
+                selected = !showOnlyFavorites,
+                onClick = { showOnlyFavorites = false },
+                label = { Text("すべての楽曲 (${tracks.size})") }
+            )
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            FilterChip(
+                selected = showOnlyFavorites,
+                onClick = { showOnlyFavorites = true },
+                label = { Text("♥ お気に入り ($favoriteCount)") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Favorite,
+                        contentDescription = null,
+                        tint = if (showOnlyFavorites) Color(0xFFE91E63) else MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
 
         // Action Buttons: Play All & Shuffle All
         Row(
@@ -167,7 +207,9 @@ fun LibraryScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = if (searchQuery.isBlank()) "ライブラリに楽曲がありません。\n「検索 & DL」タブから保存、または右上の「端末から追加」をご利用ください。" else "検索条件に一致する楽曲がありません。",
+                    text = if (showOnlyFavorites) "お気に入りの楽曲がまだありません。\n楽曲の「♥」アイコンをタップしてお気に入りに追加できます。"
+                    else if (searchQuery.isBlank()) "ライブラリに楽曲がありません。\n「検索 & DL」タブから保存、または右上の「端末から追加」をご利用ください。"
+                    else "検索条件に一致する楽曲がありません。",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -180,6 +222,7 @@ fun LibraryScreen(
                         isPlaying = currentTrack?.id == track.id && isPlaying,
                         isDownloading = downloadingTrackIds.contains(track.id),
                         onTrackClick = { onTrackClick(track, filteredTracks) },
+                        onToggleFavorite = { onToggleFavorite(track.id) },
                         onAddToPlaylistClick = { onAddToPlaylistClick(track) },
                         onDownloadClick = if (!track.isDownloaded) {
                             { onDownloadClick(track) }

@@ -106,6 +106,9 @@ fun MainScreen(
     val durationMs by viewModel.durationMs.collectAsState()
     val repeatMode by viewModel.repeatMode.collectAsState()
     val isShuffle by viewModel.isShuffle.collectAsState()
+    val playbackSpeed by viewModel.playbackSpeed.collectAsState()
+    val sleepTimerMinutes by viewModel.sleepTimerMinutes.collectAsState()
+    val sleepTimerRemainingSeconds by viewModel.sleepTimerRemainingSeconds.collectAsState()
     val statusMessage by viewModel.statusMessage.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -118,6 +121,9 @@ fun MainScreen(
     }
 
     if (showPlayerSheet && currentTrack != null) {
+        val currentTrackId = currentTrack!!.id
+        val isFav = tracks.find { it.id == currentTrackId }?.isFavorite ?: currentTrack!!.isFavorite
+
         PlayerSheet(
             track = currentTrack!!,
             isPlaying = isPlaying,
@@ -125,6 +131,10 @@ fun MainScreen(
             durationMs = durationMs,
             repeatMode = repeatMode,
             isShuffle = isShuffle,
+            isFavorite = isFav,
+            playbackSpeed = playbackSpeed,
+            sleepTimerMinutes = sleepTimerMinutes,
+            sleepTimerRemainingSeconds = sleepTimerRemainingSeconds,
             relatedTracks = relatedTracks,
             onPlayPauseClick = { viewModel.togglePlayPause() },
             onNextClick = { viewModel.nextTrack() },
@@ -132,6 +142,9 @@ fun MainScreen(
             onSeek = { viewModel.seekTo(it) },
             onToggleRepeat = { viewModel.toggleRepeatMode() },
             onToggleShuffle = { viewModel.toggleShuffle() },
+            onToggleFavorite = { viewModel.toggleFavorite(currentTrackId) },
+            onSpeedChange = { viewModel.setPlaybackSpeed(it) },
+            onSetSleepTimer = { viewModel.setSleepTimer(it) },
             onAddRelatedTrack = { url, title -> viewModel.addToDownloadQueue(url, title) },
             onCloseClick = { showPlayerSheet = false }
         )
@@ -302,6 +315,9 @@ fun MainScreen(
                         },
                         onImportLocalFiles = { uris ->
                             viewModel.importLocalAudioFiles(context, uris)
+                        },
+                        onToggleFavorite = { trackId ->
+                            viewModel.toggleFavorite(trackId)
                         }
                     )
                 }

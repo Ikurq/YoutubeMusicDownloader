@@ -74,6 +74,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     val durationMs: StateFlow<Long> = playerManager.durationMs
     val repeatMode: StateFlow<RepeatMode> = playerManager.repeatMode
     val isShuffle: StateFlow<Boolean> = playerManager.isShuffle
+    val playbackSpeed: StateFlow<Float> = playerManager.playbackSpeed
+    val sleepTimerMinutes: StateFlow<Int> = playerManager.sleepTimerMinutes
+    val sleepTimerRemainingSeconds: StateFlow<Int> = playerManager.sleepTimerRemainingSeconds
 
     private val _statusMessage = MutableStateFlow<String?>(null)
     val statusMessage: StateFlow<String?> = _statusMessage.asStateFlow()
@@ -370,6 +373,30 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     fun previousTrack() = playerManager.previousTrack()
     fun toggleRepeatMode() = playerManager.toggleRepeatMode()
     fun toggleShuffle() = playerManager.toggleShuffle()
+    fun setPlaybackSpeed(speed: Float) = playerManager.setPlaybackSpeed(speed)
+    fun setSleepTimer(minutes: Int) = playerManager.setSleepTimer(minutes)
+
+    fun toggleFavorite(trackId: String) {
+        var isNowFavorite = false
+        val updated = _tracks.value.map { track ->
+            if (track.id == trackId) {
+                isNowFavorite = !track.isFavorite
+                track.copy(isFavorite = isNowFavorite)
+            } else track
+        }
+        _tracks.value = updated
+        repository.saveTracks(updated)
+
+        // If currently playing track is the one being toggled, update currentTrack state flow
+        if (currentTrack.value?.id == trackId) {
+            val updatedCurrent = updated.find { it.id == trackId }
+            if (updatedCurrent != null) {
+                // Since currentTrack comes from playerManager, we can update it or let UI observe tracks
+            }
+        }
+
+        _statusMessage.value = if (isNowFavorite) "♥ お気に入りに追加しました" else "お気に入りを解除しました"
+    }
 
     override fun onCleared() {
         super.onCleared()
