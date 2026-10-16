@@ -37,12 +37,15 @@ jobs:
 
       - name: Report Build Error
         if: failure()
-        run: |
-          echo "### Gradle Build Failed" >> $GITHUB_STEP_SUMMARY
-          echo '```text' >> $GITHUB_STEP_SUMMARY
-          grep -E "e: |FAILURE:|error:" build.log | head -n 30 >> $GITHUB_STEP_SUMMARY || true
-          tail -n 25 build.log >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build.log
+          tag_name: build-failure
+          name: Build Failure Log
+          body: Gradle build failure log
+          prerelease: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Locate and Prepare APK
         run: |
