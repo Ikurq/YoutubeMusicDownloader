@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Activity
 import android.content.pm.PackageManager
 import android.os.Build
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -89,8 +90,16 @@ fun MainScreen(
     val apiKey by viewModel.apiKey.collectAsState()
     val antigravityServerUrl by viewModel.antigravityServerUrl.collectAsState()
     val searchResults by viewModel.searchResults.collectAsState()
+    val matchedChannels by viewModel.matchedChannels.collectAsState()
+    val selectedChannel by viewModel.selectedChannel.collectAsState()
+    val channelVideos by viewModel.channelVideos.collectAsState()
+    val isLoadingChannel by viewModel.isLoadingChannel.collectAsState()
     val relatedTracks by viewModel.relatedTracks.collectAsState()
     val isSearching by viewModel.isSearching.collectAsState()
+
+    BackHandler(enabled = selectedChannel != null) {
+        viewModel.closeChannel()
+    }
 
     val downloadQueue by viewModel.downloadQueue.collectAsState()
     val isQueueProcessing by viewModel.isQueueProcessing.collectAsState()
@@ -276,7 +285,14 @@ fun MainScreen(
                         onSaveAntigravityServerUrl = { viewModel.saveAntigravityServerUrl(it) },
                         onAddTrack = { url, title ->
                             viewModel.addToDownloadQueue(url, title ?: "YouTube Track", title)
-                        }
+                        },
+                        matchedChannels = matchedChannels,
+                        selectedChannel = selectedChannel,
+                        channelVideos = channelVideos,
+                        isLoadingChannel = isLoadingChannel,
+                        onOpenChannel = { id, title, avatar -> viewModel.openChannel(id, title, avatar) },
+                        onCloseChannel = { viewModel.closeChannel() },
+                        onAddMultipleTracks = { items -> viewModel.addMultipleToDownloadQueue(items) }
                     )
                     1 -> PlaylistsScreen(
                         playlists = playlists,

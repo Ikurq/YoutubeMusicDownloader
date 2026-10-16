@@ -14,37 +14,266 @@ data class SearchResultItem(
     val thumbnailUrl: String,
     val url: String,
     val durationText: String = "",
-    val isTopic: Boolean = false
+    val isTopic: Boolean = false,
+    val channelId: String = "",
+    val channelThumbnailUrl: String = "",
+    val rawTitle: String = ""
+)
+
+data class ChannelInfo(
+    val channelId: String,
+    val title: String,
+    val avatarUrl: String = "",
+    val subscriberCount: String = "",
+    val videoCount: String = "",
+    val description: String = ""
+)
+
+data class SearchResultData(
+    val matchedChannels: List<ChannelInfo> = emptyList(),
+    val videos: List<SearchResultItem> = emptyList()
 )
 
 object YoutubeSearchService {
 
     suspend fun searchVideos(query: String, apiKey: String? = null): List<SearchResultItem> = withContext(Dispatchers.IO) {
+        return@withContext search(query, apiKey).videos
+    }
+
+    suspend fun search(query: String, apiKey: String? = null): SearchResultData = withContext(Dispatchers.IO) {
         val trimmed = query.trim()
-        if (trimmed.isBlank()) return@withContext emptyList()
+        if (trimmed.isBlank()) return@withContext SearchResultData()
 
-        var results = mutableListOf<SearchResultItem>()
+        // 1. If query is a channel URL (e.g. youtube.com/channel/UC...), resolve directly
+        val explicitChannelId = extractChannelIdFromUrl(trimmed)
+        if (explicitChannelId != null) {
+            val (chInfo, chVideos) = fetchChannelDetails(explicitChannelId)
+            return@withContext SearchResultData(
+                matchedChannels = listOf(chInfo),
+                videos = chVideos
+            )
+        }
 
-        if (!apiKey.isNullOrBlank()) {
+        val channels = mutableListOf<ChannelInfo>()
+        val videos = mutableListOf<SearchResultItem>()
+
+        // 2. Search InnerTube (primary and most accurate search)
+        val innerTubeData = searchViaInnerTube(trimmed)
+        channels.addAll(innerTubeData.matchedChannels)
+        videos.addAll(innerTubeData.videos)
+
+        // 3. Fallback to official API if provided and InnerTube was empty
+        if (videos.isEmpty() && !apiKey.isNullOrBlank()) {
             val apiResults = searchViaApi(trimmed, apiKey)
-            if (apiResults.isNotEmpty()) results.addAll(apiResults)
+            videos.addAll(apiResults)
         }
 
-        if (results.isEmpty()) {
-            val innerTubeResults = searchViaInnerTube(trimmed)
-            if (innerTubeResults.isNotEmpty()) results.addAll(innerTubeResults)
+        // 4. Fallback to Web scrape if still empty
+        if (videos.isEmpty()) {
+            videos.addAll(searchViaWeb(trimmed))
         }
 
-        if (results.isEmpty()) {
-            results.addAll(searchViaWeb(trimmed))
+        // 5. If no explicit channel matched, but top video matches query, surface top artist channel
+        if (channels.isEmpty() && videos.isNotEmpty()) {
+            val topWithChannel = videos.firstOrNull { it.channelId.isNotBlank() && it.channelTitle.isNotBlank() }
+            if (topWithChannel != null) {
+                val cleanArtist = topWithChannel.channelTitle.replace(" - Topic", "").trim()
+                if (cleanArtist.contains(trimmed, ignoreCase = true) || trimmed.contains(cleanArtist, ignoreCase = true)) {
+                    channels.add(
+                        ChannelInfo(
+                            channelId = topWithChannel.channelId,
+                            title = topWithChannel.channelTitle,
+                            avatarUrl = topWithChannel.channelThumbnailUrl
+                        )
+                    )
+                }
+            }
         }
 
-        // Prioritize YouTube Topic (自動生成 - 公式音源) at the top!
-        return@withContext results.sortedWith(
-            compareByDescending<SearchResultItem> { it.isTopic }
-                .thenByDescending { it.channelTitle.contains("Topic", ignoreCase = true) }
-                .thenByDescending { it.title.contains("Official", ignoreCase = true) }
+        return@withContext SearchResultData(
+            matchedChannels = channels.distinctBy { it.channelId },
+            videos = videos.distinctBy { it.videoId }
         )
+    }
+
+    suspend fun fetchChannelDetails(channelId: String): Pair<ChannelInfo, List<SearchResultItem>> = withContext(Dispatchers.IO) {
+        if (channelId.isBlank()) {
+            return@withContext Pair(ChannelInfo(channelId = "", title = "チャンネル"), emptyList())
+        }
+
+        try {
+            val (info, videos) = fetchChannelViaBrowse(channelId, params = "EgZ2aWRlb3PyBgQKAjoA")
+            if (videos.isNotEmpty() || info.title.isNotBlank()) {
+                return@withContext Pair(info, videos)
+            }
+            // Fallback: try browsing channel without params (channel home tab)
+            return@withContext fetchChannelViaBrowse(channelId, params = null)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        return@withContext Pair(ChannelInfo(channelId = channelId, title = "チャンネル"), emptyList())
+    }
+
+    private fun fetchChannelViaBrowse(channelId: String, params: String?): Pair<ChannelInfo, List<SearchResultItem>> {
+        val url = URL("https://www.youtube.com/youtubei/v1/browse")
+        val conn = url.openConnection() as HttpURLConnection
+        conn.requestMethod = "POST"
+        conn.setRequestProperty("Content-Type", "application/json")
+        conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        conn.connectTimeout = 8000
+        conn.readTimeout = 8000
+        conn.doOutput = true
+
+        val body = JSONObject().apply {
+            put("browseId", channelId)
+            if (!params.isNullOrBlank()) {
+                put("params", params)
+            }
+            val context = JSONObject().apply {
+                val client = JSONObject().apply {
+                    put("clientName", "WEB")
+                    put("clientVersion", "2.20241216.01.00")
+                    put("hl", "ja")
+                    put("gl", "JP")
+                }
+                put("client", client)
+            }
+            put("context", context)
+        }
+
+        conn.outputStream.use { os ->
+            os.write(body.toString().toByteArray(Charsets.UTF_8))
+        }
+
+        if (conn.responseCode == 200) {
+            val jsonStr = conn.inputStream.bufferedReader().use { it.readText() }
+            val json = JSONObject(jsonStr)
+
+            val meta = json.optJSONObject("metadata")?.optJSONObject("channelMetadataRenderer")
+            val chTitle = meta?.optString("title", "") ?: ""
+            val chAvatar = meta?.optJSONObject("avatar")?.optJSONArray("thumbnails")?.let { thumbs ->
+                if (thumbs.length() > 0) thumbs.getJSONObject(thumbs.length() - 1).optString("url") else ""
+            } ?: ""
+            val chDesc = meta?.optString("description", "") ?: ""
+
+            var subCount = ""
+            val pageHeaderRows = json.optJSONObject("header")
+                ?.optJSONObject("pageHeaderRenderer")
+                ?.optJSONObject("content")
+                ?.optJSONObject("pageHeaderViewModel")
+                ?.optJSONObject("metadata")
+                ?.optJSONObject("contentMetadataViewModel")
+                ?.optJSONArray("metadataRows")
+
+            if (pageHeaderRows != null) {
+                for (r in 0 until pageHeaderRows.length()) {
+                    val rowObj = pageHeaderRows.getJSONObject(r)
+                    val parts = rowObj.optJSONArray("metadataParts") ?: continue
+                    for (p in 0 until parts.length()) {
+                        val part = parts.getJSONObject(p)
+                        val txt = part.optJSONObject("text")?.optString("content", "") ?: ""
+                        if (txt.contains("人") || txt.contains("登録者") || txt.contains("subscribers", ignoreCase = true)) {
+                            subCount = txt
+                            break
+                        }
+                    }
+                }
+            }
+
+            val channelInfo = ChannelInfo(
+                channelId = channelId,
+                title = chTitle.ifBlank { "チャンネル" },
+                avatarUrl = chAvatar,
+                subscriberCount = subCount,
+                description = chDesc
+            )
+
+            val videos = mutableListOf<SearchResultItem>()
+            val tabs = json.optJSONObject("contents")
+                ?.optJSONObject("twoColumnBrowseResultsRenderer")
+                ?.optJSONArray("tabs")
+
+            if (tabs != null) {
+                for (t in 0 until tabs.length()) {
+                    val tab = tabs.getJSONObject(t)
+                    val tabRenderer = tab.optJSONObject("tabRenderer") ?: continue
+                    if (tabRenderer.optBoolean("selected", false) || tabs.length() == 1) {
+                        val richGrid = tabRenderer.optJSONObject("content")?.optJSONObject("richGridRenderer")
+                        val contentsArray = richGrid?.optJSONArray("contents")
+                        if (contentsArray != null) {
+                            for (i in 0 until contentsArray.length()) {
+                                val itObj = contentsArray.getJSONObject(i)
+                                val rir = itObj.optJSONObject("richItemRenderer")?.optJSONObject("content") ?: continue
+
+                                if (rir.has("lockupViewModel")) {
+                                    val lockup = rir.getJSONObject("lockupViewModel")
+                                    val vId = lockup.optString("contentId", "")
+                                    val metaVm = lockup.optJSONObject("metadata")?.optJSONObject("lockupMetadataViewModel")
+                                    val rawTitle = metaVm?.optJSONObject("title")?.optString("content", "") ?: ""
+
+                                    var dur = ""
+                                    val overlays = lockup.optJSONObject("contentImage")
+                                        ?.optJSONObject("thumbnailViewModel")
+                                        ?.optJSONArray("overlays")
+                                    if (overlays != null && overlays.length() > 0) {
+                                        val badges = overlays.getJSONObject(0)
+                                            .optJSONObject("thumbnailBottomOverlayViewModel")
+                                            ?.optJSONArray("badges")
+                                        if (badges != null && badges.length() > 0) {
+                                            dur = badges.getJSONObject(0).optJSONObject("thumbnailBadgeViewModel")?.optString("text", "") ?: ""
+                                        }
+                                    }
+
+                                    if (vId.isNotBlank() && rawTitle.isNotBlank()) {
+                                        val cleaned = MetadataCleaner.clean(rawTitle, chTitle)
+                                        videos.add(
+                                            SearchResultItem(
+                                                videoId = vId,
+                                                title = cleaned.songTitle.ifBlank { rawTitle },
+                                                channelTitle = chTitle,
+                                                thumbnailUrl = "https://img.youtube.com/vi/$vId/hqdefault.jpg",
+                                                url = "https://www.youtube.com/watch?v=$vId",
+                                                durationText = dur,
+                                                channelId = channelId,
+                                                channelThumbnailUrl = chAvatar,
+                                                rawTitle = rawTitle
+                                            )
+                                        )
+                                    }
+                                } else if (rir.has("videoRenderer")) {
+                                    val vr = rir.getJSONObject("videoRenderer")
+                                    val vId = vr.optString("videoId", "")
+                                    val rawTitle = parseRunsText(vr.optJSONObject("title"))
+                                    val dur = vr.optJSONObject("lengthText")?.optString("simpleText", "") ?: ""
+
+                                    if (vId.isNotBlank() && rawTitle.isNotBlank()) {
+                                        val cleaned = MetadataCleaner.clean(rawTitle, chTitle)
+                                        videos.add(
+                                            SearchResultItem(
+                                                videoId = vId,
+                                                title = cleaned.songTitle.ifBlank { rawTitle },
+                                                channelTitle = chTitle,
+                                                thumbnailUrl = "https://img.youtube.com/vi/$vId/hqdefault.jpg",
+                                                url = "https://www.youtube.com/watch?v=$vId",
+                                                durationText = dur,
+                                                channelId = channelId,
+                                                channelThumbnailUrl = chAvatar,
+                                                rawTitle = rawTitle
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            return Pair(channelInfo, videos)
+        }
+
+        return Pair(ChannelInfo(channelId = channelId, title = "チャンネル"), emptyList())
     }
 
     suspend fun fetchRelatedVideos(videoId: String, artistName: String = "", songTitle: String = ""): List<SearchResultItem> = withContext(Dispatchers.IO) {
@@ -110,7 +339,8 @@ object YoutubeSearchService {
                                         channelTitle = cleaned.unitArtist.ifBlank { artistName.ifBlank { "YouTube" } },
                                         thumbnailUrl = "https://img.youtube.com/vi/$vId/hqdefault.jpg",
                                         url = "https://www.youtube.com/watch?v=$vId",
-                                        isTopic = cleaned.unitArtist.contains("Topic", ignoreCase = true)
+                                        isTopic = cleaned.unitArtist.contains("Topic", ignoreCase = true),
+                                        rawTitle = cleanTitle
                                     )
                                 )
                             }
@@ -131,8 +361,10 @@ object YoutubeSearchService {
         return@withContext list.distinctBy { it.videoId }.take(15)
     }
 
-    private fun searchViaInnerTube(query: String): List<SearchResultItem> {
-        val list = mutableListOf<SearchResultItem>()
+    private fun searchViaInnerTube(query: String): SearchResultData {
+        val channels = mutableListOf<ChannelInfo>()
+        val videos = mutableListOf<SearchResultItem>()
+
         try {
             val url = URL("https://www.youtube.com/youtubei/v1/search")
             val conn = url.openConnection() as HttpURLConnection
@@ -179,31 +411,78 @@ object YoutubeSearchService {
 
                         for (j in 0 until items.length()) {
                             val item = items.getJSONObject(j)
-                            val videoRenderer = item.optJSONObject("videoRenderer") ?: continue
 
-                            val videoId = videoRenderer.optString("videoId", "")
-                            if (videoId.isBlank()) continue
-
-                            val rawTitle = parseRunsText(videoRenderer.optJSONObject("title"))
-                            val channelTitle = parseRunsText(videoRenderer.optJSONObject("ownerText"))
-                                .ifBlank { parseRunsText(videoRenderer.optJSONObject("longBylineText")) }
-                            val durationText = videoRenderer.optJSONObject("lengthText")?.optString("simpleText", "") ?: ""
-
-                            if (rawTitle.isNotBlank()) {
-                                val cleaned = MetadataCleaner.clean(rawTitle, channelTitle)
-                                val isTopic = channelTitle.contains("Topic", ignoreCase = true) || rawTitle.contains("Topic", ignoreCase = true)
-
-                                list.add(
-                                    SearchResultItem(
-                                        videoId = videoId,
-                                        title = cleaned.songTitle,
-                                        channelTitle = if (isTopic) "${cleaned.unitArtist} (Topic公式)" else cleaned.unitArtist,
-                                        thumbnailUrl = "https://img.youtube.com/vi/$videoId/hqdefault.jpg",
-                                        url = "https://www.youtube.com/watch?v=$videoId",
-                                        durationText = durationText,
-                                        isTopic = isTopic
+                            // Parse Channel Renderer if present
+                            val channelRenderer = item.optJSONObject("channelRenderer")
+                            if (channelRenderer != null) {
+                                val chId = channelRenderer.optString("channelId", "")
+                                val chTitle = channelRenderer.optJSONObject("title")?.optString("simpleText", "")
+                                    ?: parseRunsText(channelRenderer.optJSONObject("title"))
+                                val chThumbs = channelRenderer.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+                                val chAvatar = if (chThumbs != null && chThumbs.length() > 0) {
+                                    chThumbs.getJSONObject(chThumbs.length() - 1).optString("url", "")
+                                } else ""
+                                val subText = channelRenderer.optJSONObject("videoCountText")?.optString("simpleText", "")
+                                    ?: channelRenderer.optJSONObject("subscriberCountText")?.optString("simpleText", "")
+                                    ?: ""
+                                if (chId.isNotBlank() && chTitle.isNotBlank()) {
+                                    channels.add(
+                                        ChannelInfo(
+                                            channelId = chId,
+                                            title = chTitle,
+                                            avatarUrl = chAvatar,
+                                            subscriberCount = subText
+                                        )
                                     )
-                                )
+                                }
+                            }
+
+                            // Parse Video Renderer
+                            val videoRenderer = item.optJSONObject("videoRenderer")
+                            if (videoRenderer != null) {
+                                val videoId = videoRenderer.optString("videoId", "")
+                                if (videoId.isBlank()) continue
+
+                                val rawTitle = parseRunsText(videoRenderer.optJSONObject("title"))
+                                val ownerRuns = videoRenderer.optJSONObject("ownerText")?.optJSONArray("runs")
+                                val ownerObj = if (ownerRuns != null && ownerRuns.length() > 0) ownerRuns.getJSONObject(0) else null
+
+                                val channelTitle = ownerObj?.optString("text", "")
+                                    ?.ifBlank { parseRunsText(videoRenderer.optJSONObject("ownerText")) }
+                                    ?.ifBlank { parseRunsText(videoRenderer.optJSONObject("longBylineText")) }
+                                    ?: "YouTube"
+
+                                val browseEndpoint = ownerObj?.optJSONObject("navigationEndpoint")?.optJSONObject("browseEndpoint")
+                                val channelId = browseEndpoint?.optString("browseId", "") ?: ""
+
+                                val channelThumbnailUrl = videoRenderer.optJSONObject("channelThumbnailSupportedRenderers")
+                                    ?.optJSONObject("channelThumbnailWithLinkRenderer")
+                                    ?.optJSONObject("thumbnail")
+                                    ?.optJSONArray("thumbnails")?.let { thumbs ->
+                                        if (thumbs.length() > 0) thumbs.getJSONObject(thumbs.length() - 1).optString("url", "") else ""
+                                    } ?: ""
+
+                                val durationText = videoRenderer.optJSONObject("lengthText")?.optString("simpleText", "") ?: ""
+
+                                if (rawTitle.isNotBlank()) {
+                                    val cleaned = MetadataCleaner.clean(rawTitle, channelTitle)
+                                    val isTopic = channelTitle.contains("Topic", ignoreCase = true) || rawTitle.contains("Topic", ignoreCase = true)
+
+                                    videos.add(
+                                        SearchResultItem(
+                                            videoId = videoId,
+                                            title = cleaned.songTitle.ifBlank { rawTitle },
+                                            channelTitle = channelTitle,
+                                            thumbnailUrl = "https://img.youtube.com/vi/$videoId/hqdefault.jpg",
+                                            url = "https://www.youtube.com/watch?v=$videoId",
+                                            durationText = durationText,
+                                            isTopic = isTopic,
+                                            channelId = channelId,
+                                            channelThumbnailUrl = channelThumbnailUrl,
+                                            rawTitle = rawTitle
+                                        )
+                                    )
+                                }
                             }
                         }
                     }
@@ -212,7 +491,11 @@ object YoutubeSearchService {
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        return list
+
+        return SearchResultData(
+            matchedChannels = channels,
+            videos = videos
+        )
     }
 
     private fun parseRunsText(jsonObj: JSONObject?): String {
@@ -255,17 +538,20 @@ object YoutubeSearchService {
 
                         val rawTitle = snippet.optString("title")
                         val channelTitle = snippet.optString("channelTitle")
+                        val channelId = snippet.optString("channelId", "")
                         val cleaned = MetadataCleaner.clean(rawTitle, channelTitle)
                         val isTopic = channelTitle.contains("Topic", ignoreCase = true)
 
                         list.add(
                             SearchResultItem(
                                 videoId = videoId,
-                                title = cleaned.songTitle,
-                                channelTitle = if (isTopic) "${cleaned.unitArtist} (Topic公式)" else cleaned.unitArtist,
+                                title = cleaned.songTitle.ifBlank { rawTitle },
+                                channelTitle = channelTitle,
                                 thumbnailUrl = "https://img.youtube.com/vi/$videoId/hqdefault.jpg",
                                 url = "https://www.youtube.com/watch?v=$videoId",
-                                isTopic = isTopic
+                                isTopic = isTopic,
+                                channelId = channelId,
+                                rawTitle = rawTitle
                             )
                         )
                     }
@@ -302,15 +588,16 @@ object YoutubeSearchService {
                     seen.add(vId)
 
                     val titleText = matcher.group(2) ?: ""
-                    val cleaned = MetadataCleaner.clean(titleText, "YouTube Artist")
+                    val cleaned = MetadataCleaner.clean(titleText, "YouTube")
 
                     list.add(
                         SearchResultItem(
                             videoId = vId,
-                            title = cleaned.songTitle,
-                            channelTitle = cleaned.unitArtist,
+                            title = cleaned.songTitle.ifBlank { titleText },
+                            channelTitle = "YouTube",
                             thumbnailUrl = "https://img.youtube.com/vi/$vId/hqdefault.jpg",
-                            url = "https://www.youtube.com/watch?v=$vId"
+                            url = "https://www.youtube.com/watch?v=$vId",
+                            rawTitle = titleText
                         )
                     )
                 }
@@ -319,5 +606,11 @@ object YoutubeSearchService {
             e.printStackTrace()
         }
         return list
+    }
+
+    private fun extractChannelIdFromUrl(input: String): String? {
+        val regex = Regex("""(?:youtube\.com/(?:channel/|c/|user/)?|youtu\.be/)?(UC[a-zA-Z0-9_-]{22})""")
+        val match = regex.find(input)
+        return match?.groupValues?.get(1)
     }
 }

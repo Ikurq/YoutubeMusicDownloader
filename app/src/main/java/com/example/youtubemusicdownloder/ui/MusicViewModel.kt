@@ -5,6 +5,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.youtubemusicdownloder.data.ChannelInfo
 import com.example.youtubemusicdownloder.data.DownloadQueueItem
 import com.example.youtubemusicdownloder.data.DownloadQueueManager
 import com.example.youtubemusicdownloder.data.GeminiMetadataCleaner
@@ -44,6 +45,18 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _searchResults = MutableStateFlow<List<SearchResultItem>>(emptyList())
     val searchResults: StateFlow<List<SearchResultItem>> = _searchResults.asStateFlow()
+
+    private val _matchedChannels = MutableStateFlow<List<ChannelInfo>>(emptyList())
+    val matchedChannels: StateFlow<List<ChannelInfo>> = _matchedChannels.asStateFlow()
+
+    private val _selectedChannel = MutableStateFlow<ChannelInfo?>(null)
+    val selectedChannel: StateFlow<ChannelInfo?> = _selectedChannel.asStateFlow()
+
+    private val _channelVideos = MutableStateFlow<List<SearchResultItem>>(emptyList())
+    val channelVideos: StateFlow<List<SearchResultItem>> = _channelVideos.asStateFlow()
+
+    private val _isLoadingChannel = MutableStateFlow(false)
+    val isLoadingChannel: StateFlow<Boolean> = _isLoadingChannel.asStateFlow()
 
     private val _relatedTracks = MutableStateFlow<List<SearchResultItem>>(emptyList())
     val relatedTracks: StateFlow<List<SearchResultItem>> = _relatedTracks.asStateFlow()
@@ -252,12 +265,15 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             _isSearching.value = true
             _statusMessage.value = "YouTubeを検索中..."
             try {
-                val results = YoutubeSearchService.searchVideos(query, _apiKey.value)
-                _searchResults.value = results
-                if (results.isEmpty()) {
+                val searchData = YoutubeSearchService.search(query, _apiKey.value)
+                _searchResults.value = searchData.videos
+                _matchedChannels.value = searchData.matchedChannels
+
+                if (searchData.videos.isEmpty() && searchData.matchedChannels.isEmpty()) {
                     _statusMessage.value = "検索結果が見つかりませんでした"
                 } else {
-                    _statusMessage.value = "${results.size}件の楽曲が見つかりました"
+                    val channelMsg = if (searchData.matchedChannels.isNotEmpty()) "（チャンネル${searchData.matchedChannels.size}件）" else ""
+                    _statusMessage.value = "${searchData.videos.size}件の楽曲が見つかりました$channelMsg"
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -268,8 +284,40 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun openChannel(channelId: String, channelTitle: String = "", avatarUrl: String = "") {
+        if (channelId.isBlank()) return
+        viewModelScope.launch {
+            _isLoadingChannel.value = true
+            _selectedChannel.value = ChannelInfo(
+                channelId = channelId,
+                title = channelTitle.ifBlank { "チャンネル" },
+                avatarUrl = avatarUrl
+            )
+            _statusMessage.value = "${channelTitle.ifBlank { "チャンネル" }} の楽曲を読み込み中..."
+            try {
+                val (info, videos) = YoutubeSearchService.fetchChannelDetails(channelId)
+                _selectedChannel.value = info
+                _channelVideos.value = videos
+                _statusMessage.value = "${info.title} から${videos.size}件の楽曲を読み込みました"
+            } catch (e: Exception) {
+                e.printStackTrace()
+                _statusMessage.value = "チャンネル読み込みエラー: ${e.message}"
+            } finally {
+                _isLoadingChannel.value = false
+            }
+        }
+    }
+
+    fun closeChannel() {
+        _selectedChannel.value = null
+        _channelVideos.value = emptyList()
+    }
+
     fun clearSearchResults() {
         _searchResults.value = emptyList()
+        _matchedChannels.value = emptyList()
+        _selectedChannel.value = null
+        _channelVideos.value = emptyList()
     }
 
     fun downloadTrack(track: Track) {
