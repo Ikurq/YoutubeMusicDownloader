@@ -33,6 +33,9 @@ jobs:
         id: build_apk
         run: |
           set -o pipefail
+          if [ -n "$ANDROID_HOME" ] && [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+          fi
           ./gradlew assembleDebug --stacktrace 2>&1 | tee build.log
 
       - name: Report Build Error
