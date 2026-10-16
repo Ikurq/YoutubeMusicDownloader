@@ -13,6 +13,7 @@ import com.example.youtubemusicdownloder.data.LocalAudioImporter
 import com.example.youtubemusicdownloder.data.MusicRepository
 import com.example.youtubemusicdownloder.data.ReleaseInfo
 import com.example.youtubemusicdownloder.data.SearchResultItem
+import com.example.youtubemusicdownloder.data.SearchFilter
 import com.example.youtubemusicdownloder.data.UpdateManager
 import com.example.youtubemusicdownloder.data.YoutubeDownloader
 import com.example.youtubemusicdownloder.data.YoutubeSearchService
@@ -63,6 +64,14 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _isSearching = MutableStateFlow(false)
     val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
+
+    private val _searchFilter = MutableStateFlow(SearchFilter.ALL)
+    val searchFilter: StateFlow<SearchFilter> = _searchFilter.asStateFlow()
+
+    private val _searchSuggestions = MutableStateFlow<List<String>>(emptyList())
+    val searchSuggestions: StateFlow<List<String>> = _searchSuggestions.asStateFlow()
+
+    private val _lastSearchQuery = MutableStateFlow("")
 
     // Download Queue
     val downloadQueue: StateFlow<List<DownloadQueueItem>> = downloadQueueManager.queue
@@ -259,13 +268,38 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         _statusMessage.value = null
     }
 
-    fun searchYouTube(query: String) {
+    fun setSearchFilter(filter: SearchFilter) {
+        _searchFilter.value = filter
+        val currentQuery = _lastSearchQuery.value
+        if (currentQuery.isNotBlank()) {
+            searchYouTube(currentQuery, filter)
+        }
+    }
+
+    fun fetchSuggestions(query: String) {
+        if (query.isBlank()) {
+            _searchSuggestions.value = emptyList()
+            return
+        }
+        viewModelScope.launch {
+            val suggestions = YoutubeSearchService.fetchSearchSuggestions(query)
+            _searchSuggestions.value = suggestions
+        }
+    }
+
+    fun clearSuggestions() {
+        _searchSuggestions.value = emptyList()
+    }
+
+    fun searchYouTube(query: String, filter: SearchFilter = _searchFilter.value) {
         if (query.isBlank()) return
+        _lastSearchQuery.value = query
+        _searchSuggestions.value = emptyList()
         viewModelScope.launch {
             _isSearching.value = true
-            _statusMessage.value = "YouTubeを検索中..."
+            _statusMessage.value = "YouTube Music / YouTube を高精度検索中..."
             try {
-                val searchData = YoutubeSearchService.search(query, _apiKey.value)
+                val searchData = YoutubeSearchService.search(query, _apiKey.value, filter)
                 _searchResults.value = searchData.videos
                 _matchedChannels.value = searchData.matchedChannels
 
@@ -318,6 +352,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         _matchedChannels.value = emptyList()
         _selectedChannel.value = null
         _channelVideos.value = emptyList()
+        _searchSuggestions.value = emptyList()
+        _lastSearchQuery.value = ""
     }
 
     fun downloadTrack(track: Track) {

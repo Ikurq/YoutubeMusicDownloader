@@ -2,6 +2,8 @@ package com.example.youtubemusicdownloder.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -22,6 +25,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Search
@@ -30,6 +34,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -56,6 +62,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.youtubemusicdownloder.data.ChannelInfo
+import com.example.youtubemusicdownloder.data.SearchFilter
 import com.example.youtubemusicdownloder.data.SearchResultItem
 import com.example.youtubemusicdownloder.data.YoutubeExtractor
 import com.example.youtubemusicdownloder.ui.components.ApiSettingsCard
@@ -81,7 +88,12 @@ fun UrlSearchScreen(
     isLoadingChannel: Boolean = false,
     onOpenChannel: (channelId: String, channelTitle: String, avatarUrl: String) -> Unit = { _, _, _ -> },
     onCloseChannel: () -> Unit = {},
-    onAddMultipleTracks: (List<Pair<String, String>>) -> Unit = {}
+    onAddMultipleTracks: (List<Pair<String, String>>) -> Unit = {},
+    searchFilter: SearchFilter = SearchFilter.ALL,
+    onFilterChange: (SearchFilter) -> Unit = {},
+    searchSuggestions: List<String> = emptyList(),
+    onQueryChange: (String) -> Unit = {},
+    onClearSuggestions: () -> Unit = {}
 ) {
     var searchInput by remember { mutableStateOf("") }
     var channelFilterQuery by remember { mutableStateOf("") }
@@ -351,7 +363,12 @@ fun UrlSearchScreen(
                         value = searchInput,
                         onValueChange = {
                             searchInput = it
-                            if (it.isBlank()) onClearSearch()
+                            if (it.isBlank()) {
+                                onClearSearch()
+                                onClearSuggestions()
+                            } else if (videoId == null) {
+                                onQueryChange(it)
+                            }
                         },
                         label = { Text("楽曲名、アーティスト名、チャンネル名、または YouTube URL") },
                         placeholder = { Text("検索キーワード、チャンネルURL、または YouTube URL") },
@@ -367,6 +384,7 @@ fun UrlSearchScreen(
                                 IconButton(onClick = {
                                     searchInput = ""
                                     onClearSearch()
+                                    onClearSuggestions()
                                 }) {
                                     Icon(Icons.Default.Clear, contentDescription = "クリア")
                                 }
@@ -376,6 +394,7 @@ fun UrlSearchScreen(
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                         keyboardActions = KeyboardActions(onSearch = {
                             keyboardController?.hide()
+                            onClearSuggestions()
                             if (videoId == null && searchInput.isNotBlank()) {
                                 onSearch(searchInput)
                             }
@@ -388,12 +407,92 @@ fun UrlSearchScreen(
                         )
                     )
 
+                    // Autocomplete Suggestions List
+                    if (videoId == null && searchSuggestions.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+                                .padding(vertical = 4.dp)
+                        ) {
+                            searchSuggestions.forEach { suggestion ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            searchInput = suggestion
+                                            keyboardController?.hide()
+                                            onClearSuggestions()
+                                            onSearch(suggestion)
+                                        }
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Search,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text(
+                                        text = suggestion,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Search Filter Chips
+                    if (videoId == null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            SearchFilter.entries.forEach { filter ->
+                                FilterChip(
+                                    selected = searchFilter == filter,
+                                    onClick = {
+                                        onFilterChange(filter)
+                                        if (searchInput.isNotBlank() && videoId == null) {
+                                            onClearSuggestions()
+                                            onSearch(searchInput)
+                                        }
+                                    },
+                                    label = { Text(filter.label, style = MaterialTheme.typography.labelMedium) },
+                                    leadingIcon = if (searchFilter == filter) {
+                                        {
+                                            Icon(
+                                                imageVector = Icons.Default.Check,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                        }
+                                    } else null,
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                )
+                            }
+                        }
+                    }
+
                     if (videoId == null && searchInput.isNotBlank()) {
                         Spacer(modifier = Modifier.height(8.dp))
 
                         Button(
                             onClick = {
                                 keyboardController?.hide()
+                                onClearSuggestions()
                                 onSearch(searchInput)
                             },
                             enabled = !isSearching,

@@ -96,6 +96,8 @@ fun MainScreen(
     val isLoadingChannel by viewModel.isLoadingChannel.collectAsState()
     val relatedTracks by viewModel.relatedTracks.collectAsState()
     val isSearching by viewModel.isSearching.collectAsState()
+    val searchFilter by viewModel.searchFilter.collectAsState()
+    val searchSuggestions by viewModel.searchSuggestions.collectAsState()
 
     BackHandler(enabled = selectedChannel != null) {
         viewModel.closeChannel()
@@ -292,7 +294,12 @@ fun MainScreen(
                         isLoadingChannel = isLoadingChannel,
                         onOpenChannel = { id, title, avatar -> viewModel.openChannel(id, title, avatar) },
                         onCloseChannel = { viewModel.closeChannel() },
-                        onAddMultipleTracks = { items -> viewModel.addMultipleToDownloadQueue(items) }
+                        onAddMultipleTracks = { items -> viewModel.addMultipleToDownloadQueue(items) },
+                        searchFilter = searchFilter,
+                        onFilterChange = { viewModel.setSearchFilter(it) },
+                        searchSuggestions = searchSuggestions,
+                        onQueryChange = { viewModel.fetchSuggestions(it) },
+                        onClearSuggestions = { viewModel.clearSuggestions() }
                     )
                     1 -> PlaylistsScreen(
                         playlists = playlists,

@@ -2,6 +2,7 @@ package com.example.youtubemusicdownloder.data
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -17,7 +18,8 @@ data class SearchResultItem(
     val isTopic: Boolean = false,
     val channelId: String = "",
     val channelThumbnailUrl: String = "",
-    val rawTitle: String = ""
+    val rawTitle: String = "",
+    val albumName: String = ""
 )
 
 data class ChannelInfo(
@@ -34,13 +36,28 @@ data class SearchResultData(
     val videos: List<SearchResultItem> = emptyList()
 )
 
+enum class SearchFilter(val label: String) {
+    ALL("すべて (公式優先)"),
+    SONGS("公式楽曲"),
+    VIDEOS("MV・動画"),
+    YOUTUBE("YouTube全般")
+}
+
 object YoutubeSearchService {
 
-    suspend fun searchVideos(query: String, apiKey: String? = null): List<SearchResultItem> = withContext(Dispatchers.IO) {
-        return@withContext search(query, apiKey).videos
+    suspend fun searchVideos(
+        query: String,
+        apiKey: String? = null,
+        filter: SearchFilter = SearchFilter.ALL
+    ): List<SearchResultItem> = withContext(Dispatchers.IO) {
+        return@withContext search(query, apiKey, filter).videos
     }
 
-    suspend fun search(query: String, apiKey: String? = null): SearchResultData = withContext(Dispatchers.IO) {
+    suspend fun search(
+        query: String,
+        apiKey: String? = null,
+        filter: SearchFilter = SearchFilter.ALL
+    ): SearchResultData = withContext(Dispatchers.IO) {
         val trimmed = query.trim()
         if (trimmed.isBlank()) return@withContext SearchResultData()
 
@@ -57,23 +74,67 @@ object YoutubeSearchService {
         val channels = mutableListOf<ChannelInfo>()
         val videos = mutableListOf<SearchResultItem>()
 
-        // 2. Search InnerTube (primary and most accurate search)
-        val innerTubeData = searchViaInnerTube(trimmed)
-        channels.addAll(innerTubeData.matchedChannels)
-        videos.addAll(innerTubeData.videos)
+        when (filter) {
+            SearchFilter.SONGS, SearchFilter.VIDEOS -> {
+                // Targeted YouTube Music search
+                val ytMusicData = searchViaYoutubeMusic(trimmed, filter)
+                channels.addAll(ytMusicData.matchedChannels)
+                videos.addAll(ytMusicData.videos)
 
-        // 3. Fallback to official API if provided and InnerTube was empty
-        if (videos.isEmpty() && !apiKey.isNullOrBlank()) {
-            val apiResults = searchViaApi(trimmed, apiKey)
-            videos.addAll(apiResults)
+                // Fallback to standard InnerTube if YouTube Music returned nothing
+                if (videos.isEmpty()) {
+                    val fallback = searchViaInnerTube(trimmed)
+                    channels.addAll(fallback.matchedChannels)
+                    val filtered = fallback.videos
+                        .filter { !isShortsOrTooLong(it.durationText, it.rawTitle, trimmed) }
+                        .filter { !isNoiseVideo(it.rawTitle, it.channelTitle, trimmed) }
+                    videos.addAll(filtered)
+                }
+            }
+
+            SearchFilter.YOUTUBE -> {
+                // Standard YouTube search with noise filtering & reranking
+                val ytData = searchViaInnerTube(trimmed)
+                channels.addAll(ytData.matchedChannels)
+                val filtered = ytData.videos
+                    .filter { !isShortsOrTooLong(it.durationText, it.rawTitle, trimmed) }
+                    .filter { !isNoiseVideo(it.rawTitle, it.channelTitle, trimmed) }
+                    .sortedByDescending { calculateRelevanceScore(it, trimmed) }
+                videos.addAll(filtered)
+            }
+
+            SearchFilter.ALL -> {
+                // High-precision combined search:
+                // Step A: YouTube Music search for official audio tracks & artist card
+                val ytMusicData = searchViaYoutubeMusic(trimmed, SearchFilter.ALL)
+                channels.addAll(ytMusicData.matchedChannels)
+
+                // Step B: Standard YouTube search for official MVs and related video entries
+                val ytData = searchViaInnerTube(trimmed)
+                channels.addAll(ytData.matchedChannels)
+
+                val cleanYtVideos = ytData.videos
+                    .filter { !isShortsOrTooLong(it.durationText, it.rawTitle, trimmed) }
+                    .filter { !isNoiseVideo(it.rawTitle, it.channelTitle, trimmed) }
+
+                // Merge with priority: YT Music official songs first, followed by clean YouTube results
+                videos.addAll(ytMusicData.videos)
+                videos.addAll(cleanYtVideos)
+            }
         }
 
-        // 4. Fallback to Web scrape if still empty
+        // Fallback to official API if provided and list was empty
+        if (videos.isEmpty() && !apiKey.isNullOrBlank()) {
+            val apiResults = searchViaApi(trimmed, apiKey)
+            videos.addAll(apiResults.filter { !isNoiseVideo(it.rawTitle, it.channelTitle, trimmed) })
+        }
+
+        // Fallback to Web scrape if still empty
         if (videos.isEmpty()) {
             videos.addAll(searchViaWeb(trimmed))
         }
 
-        // 5. If no explicit channel matched, but top video matches query, surface top artist channel
+        // Surface artist channel if not explicitly detected in channel card
         if (channels.isEmpty() && videos.isNotEmpty()) {
             val topWithChannel = videos.firstOrNull { it.channelId.isNotBlank() && it.channelTitle.isNotBlank() }
             if (topWithChannel != null) {
@@ -90,10 +151,45 @@ object YoutubeSearchService {
             }
         }
 
+        // Deduplicate and apply final ranking
+        val finalVideos = videos.distinctBy { it.videoId }
+            .sortedByDescending { calculateRelevanceScore(it, trimmed) }
+
         return@withContext SearchResultData(
             matchedChannels = channels.distinctBy { it.channelId },
-            videos = videos.distinctBy { it.videoId }
+            videos = finalVideos
         )
+    }
+
+    suspend fun fetchSearchSuggestions(query: String): List<String> = withContext(Dispatchers.IO) {
+        val trimmed = query.trim()
+        if (trimmed.isBlank()) return@withContext emptyList()
+        try {
+            val encoded = URLEncoder.encode(trimmed, "UTF-8")
+            val url = URL("https://suggestqueries.google.com/complete/search?client=firefox&ds=yt&q=$encoded")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "GET"
+            conn.connectTimeout = 3000
+            conn.readTimeout = 3000
+            if (conn.responseCode == 200) {
+                val text = conn.inputStream.bufferedReader().use { it.readText() }
+                val jsonArr = JSONArray(text)
+                val list = mutableListOf<String>()
+                val suggestions = jsonArr.optJSONArray(1)
+                if (suggestions != null) {
+                    for (i in 0 until suggestions.length()) {
+                        val s = suggestions.optString(i, "")
+                        if (s.isNotBlank() && !s.equals(trimmed, ignoreCase = true)) {
+                            list.add(s)
+                        }
+                    }
+                }
+                return@withContext list.take(6)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        emptyList()
     }
 
     suspend fun fetchChannelDetails(channelId: String): Pair<ChannelInfo, List<SearchResultItem>> = withContext(Dispatchers.IO) {
@@ -113,6 +209,323 @@ object YoutubeSearchService {
         }
 
         return@withContext Pair(ChannelInfo(channelId = channelId, title = "チャンネル"), emptyList())
+    }
+
+    private fun searchViaYoutubeMusic(query: String, filter: SearchFilter = SearchFilter.ALL): SearchResultData {
+        val channels = mutableListOf<ChannelInfo>()
+        val videos = mutableListOf<SearchResultItem>()
+
+        val params = when (filter) {
+            SearchFilter.SONGS -> "EgWKAQIIAWoIEAUQCRADEAQ="
+            SearchFilter.VIDEOS -> "EgWKAQIQAWoIEAUQCRADEAQ="
+            else -> "EgWKAQIIAWoIEAUQCRADEAQ="
+        }
+
+        try {
+            val url = URL("https://music.youtube.com/youtubei/v1/search")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            conn.setRequestProperty("Origin", "https://music.youtube.com")
+            conn.setRequestProperty("Referer", "https://music.youtube.com/")
+            conn.connectTimeout = 8000
+            conn.readTimeout = 8000
+            conn.doOutput = true
+
+            val body = JSONObject().apply {
+                put("query", query)
+                if (params.isNotBlank()) {
+                    put("params", params)
+                }
+                val context = JSONObject().apply {
+                    val client = JSONObject().apply {
+                        put("clientName", "WEB_REMIX")
+                        put("clientVersion", "1.20241216.01.00")
+                        put("hl", "ja")
+                        put("gl", "JP")
+                    }
+                    put("client", client)
+                }
+                put("context", context)
+            }
+
+            conn.outputStream.use { os ->
+                os.write(body.toString().toByteArray(Charsets.UTF_8))
+            }
+
+            if (conn.responseCode == 200) {
+                val jsonStr = conn.inputStream.bufferedReader().use { it.readText() }
+                val json = JSONObject(jsonStr)
+
+                val contents = json.optJSONObject("contents")
+                    ?.optJSONObject("tabbedSearchResultsRenderer")
+                    ?.optJSONArray("tabs")
+                    ?.optJSONObject(0)
+                    ?.optJSONObject("tabRenderer")
+                    ?.optJSONObject("content")
+                    ?.optJSONObject("sectionListRenderer")
+                    ?.optJSONArray("contents")
+
+                if (contents != null) {
+                    for (i in 0 until contents.length()) {
+                        val section = contents.getJSONObject(i)
+
+                        // 1. musicCardShelfRenderer (Top artist/song card)
+                        val card = section.optJSONObject("musicCardShelfRenderer")
+                        if (card != null) {
+                            val cardTitle = parseRunsText(card.optJSONObject("title"))
+                            val cardSub = parseRunsText(card.optJSONObject("subtitle"))
+                            val titleRuns = card.optJSONObject("title")?.optJSONArray("runs")
+                            val cardBrowseId = if (titleRuns != null && titleRuns.length() > 0) {
+                                titleRuns.getJSONObject(0)
+                                    .optJSONObject("navigationEndpoint")
+                                    ?.optJSONObject("browseEndpoint")
+                                    ?.optString("browseId", "") ?: ""
+                            } else ""
+
+                            val thumbs = card.optJSONObject("thumbnail")
+                                ?.optJSONObject("musicThumbnailRenderer")
+                                ?.optJSONObject("thumbnail")
+                                ?.optJSONArray("thumbnails")
+                            val avatarUrl = if (thumbs != null && thumbs.length() > 0) {
+                                thumbs.getJSONObject(thumbs.length() - 1).optString("url", "")
+                            } else ""
+
+                            if (cardBrowseId.startsWith("UC") && cardTitle.isNotBlank()) {
+                                channels.add(
+                                    ChannelInfo(
+                                        channelId = cardBrowseId,
+                                        title = cardTitle,
+                                        avatarUrl = avatarUrl,
+                                        subscriberCount = cardSub
+                                    )
+                                )
+                            }
+
+                            // Card contents (top tracks)
+                            val cardContents = card.optJSONArray("contents")
+                            if (cardContents != null) {
+                                for (k in 0 until cardContents.length()) {
+                                    val itemObj = cardContents.getJSONObject(k).optJSONObject("musicResponsiveListItemRenderer")
+                                    if (itemObj != null) {
+                                        parseMusicResponsiveListItem(itemObj)?.let { videos.add(it) }
+                                    }
+                                }
+                            }
+                        }
+
+                        // 2. musicShelfRenderer
+                        val shelf = section.optJSONObject("musicShelfRenderer")
+                        if (shelf != null) {
+                            val items = shelf.optJSONArray("contents")
+                            if (items != null) {
+                                for (k in 0 until items.length()) {
+                                    val itemObj = items.getJSONObject(k).optJSONObject("musicResponsiveListItemRenderer")
+                                    if (itemObj != null) {
+                                        parseMusicResponsiveListItem(itemObj)?.let { videos.add(it) }
+                                    }
+                                }
+                            }
+                        }
+
+                        // 3. itemSectionRenderer
+                        val itemSection = section.optJSONObject("itemSectionRenderer")
+                        if (itemSection != null) {
+                            val subContents = itemSection.optJSONArray("contents")
+                            if (subContents != null) {
+                                for (k in 0 until subContents.length()) {
+                                    val itemObj = subContents.getJSONObject(k).optJSONObject("musicResponsiveListItemRenderer")
+                                    if (itemObj != null) {
+                                        parseMusicResponsiveListItem(itemObj)?.let { videos.add(it) }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        return SearchResultData(
+            matchedChannels = channels.distinctBy { it.channelId },
+            videos = videos.distinctBy { it.videoId }
+        )
+    }
+
+    private fun parseMusicResponsiveListItem(item: JSONObject): SearchResultItem? {
+        val flexCols = item.optJSONArray("flexColumns") ?: return null
+        if (flexCols.length() == 0) return null
+
+        val col0Text = flexCols.getJSONObject(0)
+            .optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+            ?.optJSONObject("text")
+        val title = parseRunsText(col0Text).ifBlank { return null }
+
+        var videoId = item.optJSONObject("playlistItemData")?.optString("videoId", "") ?: ""
+        if (videoId.isBlank()) {
+            videoId = item.optJSONObject("overlay")
+                ?.optJSONObject("musicItemThumbnailOverlayRenderer")
+                ?.optJSONObject("content")
+                ?.optJSONObject("musicPlayButtonRenderer")
+                ?.optJSONObject("playNavigationEndpoint")
+                ?.optJSONObject("watchEndpoint")
+                ?.optString("videoId", "") ?: ""
+        }
+        if (videoId.isBlank()) {
+            val runs0 = col0Text?.optJSONArray("runs")
+            if (runs0 != null && runs0.length() > 0) {
+                videoId = runs0.getJSONObject(0)
+                    .optJSONObject("navigationEndpoint")
+                    ?.optJSONObject("watchEndpoint")
+                    ?.optString("videoId", "") ?: ""
+            }
+        }
+        if (videoId.isBlank()) return null
+
+        var artistName = ""
+        var albumName = ""
+        var durationText = ""
+        var channelId = ""
+
+        if (flexCols.length() > 1) {
+            val col1Text = flexCols.getJSONObject(1)
+                .optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                ?.optJSONObject("text")
+            val runs1 = col1Text?.optJSONArray("runs")
+            if (runs1 != null) {
+                for (k in 0 until runs1.length()) {
+                    val r = runs1.getJSONObject(k)
+                    val text = r.optString("text", "").trim()
+                    if (text.isBlank() || text == "•" || text == "·" || text == "・") continue
+
+                    val bId = r.optJSONObject("navigationEndpoint")
+                        ?.optJSONObject("browseEndpoint")
+                        ?.optString("browseId", "") ?: ""
+
+                    if (Regex("""^\d+:\d+(?::\d+)?$""").matches(text)) {
+                        durationText = text
+                    } else if (bId.startsWith("UC")) {
+                        artistName = text
+                        channelId = bId
+                    } else if (bId.startsWith("MPREb_") || bId.startsWith("FEmusic_")) {
+                        albumName = text
+                    } else if (artistName.isBlank() && text != "曲" && text != "動画" && text != "シングル" && text != "アルバム" && !text.contains("視聴")) {
+                        artistName = text
+                    } else if (albumName.isBlank() && text != "曲" && text != "動画" && text != "シングル" && text != "アルバム" && !text.contains("視聴")) {
+                        albumName = text
+                    }
+                }
+            }
+        }
+
+        if (artistName.isBlank()) artistName = "YouTube Music"
+
+        var thumbUrl = ""
+        val thumbObj = item.optJSONObject("thumbnail")
+            ?.optJSONObject("musicThumbnailRenderer")
+            ?.optJSONObject("thumbnail")
+            ?.optJSONArray("thumbnails")
+        if (thumbObj != null && thumbObj.length() > 0) {
+            thumbUrl = thumbObj.getJSONObject(thumbObj.length() - 1).optString("url", "")
+        }
+        if (thumbUrl.isBlank()) {
+            thumbUrl = "https://img.youtube.com/vi/$videoId/hqdefault.jpg"
+        }
+
+        val cleaned = MetadataCleaner.clean(title, artistName)
+
+        return SearchResultItem(
+            videoId = videoId,
+            title = cleaned.songTitle.ifBlank { title },
+            channelTitle = artistName,
+            thumbnailUrl = thumbUrl,
+            url = "https://www.youtube.com/watch?v=$videoId",
+            durationText = durationText,
+            isTopic = true,
+            channelId = channelId,
+            channelThumbnailUrl = "",
+            rawTitle = title,
+            albumName = albumName
+        )
+    }
+
+    private fun isShortsOrTooLong(durationText: String, title: String, query: String): Boolean {
+        if (title.contains("#shorts", ignoreCase = true)) return true
+        val isQueryLookingForLong = query.contains("作業用") || query.contains("bgm", ignoreCase = true) ||
+                query.contains("耐久") || query.contains("メドレー") || query.contains("playlist", ignoreCase = true) ||
+                query.contains("mix", ignoreCase = true)
+
+        val parts = durationText.trim().split(":")
+        if (parts.size == 2) {
+            val min = parts[0].toIntOrNull() ?: 0
+            val sec = parts[1].toIntOrNull() ?: 0
+            // 60 seconds or less is likely a Short or teaser
+            if (min == 0 && sec <= 60) return true
+        } else if (parts.size >= 3 && !isQueryLookingForLong) {
+            // Hours long (e.g. 1:00:00+) when user didn't ask for long BGM/mix
+            val hours = parts[0].toIntOrNull() ?: 0
+            if (hours >= 1) return true
+        }
+        return false
+    }
+
+    private fun isNoiseVideo(title: String, channelTitle: String, query: String): Boolean {
+        val qLower = query.lowercase()
+        val allowCovers = qLower.contains("歌ってみた") || qLower.contains("cover") || qLower.contains("カバー")
+        val allowReaction = qLower.contains("リアクション") || qLower.contains("reaction")
+        val allowDance = qLower.contains("踊ってみた") || qLower.contains("dance")
+        val allowInstrument = qLower.contains("弾いてみた") || qLower.contains("叩いてみた")
+
+        val tLower = title.lowercase()
+        if (!allowCovers && (tLower.contains("歌ってみた") || tLower.contains("covered by") || tLower.contains("[cover]") || tLower.contains("(cover)"))) {
+            return true
+        }
+        if (!allowReaction && (tLower.contains("リアクション") || tLower.contains("reaction") || tLower.contains("切り抜き"))) {
+            return true
+        }
+        if (!allowDance && tLower.contains("踊ってみた")) {
+            return true
+        }
+        if (!allowInstrument && (tLower.contains("弾いてみた") || tLower.contains("叩いてみた"))) {
+            return true
+        }
+        return false
+    }
+
+    private fun calculateRelevanceScore(item: SearchResultItem, query: String): Int {
+        var score = 0
+        val qLower = query.lowercase().trim()
+        val tLower = item.title.lowercase()
+        val chLower = item.channelTitle.lowercase()
+
+        // 1. YouTube Music / Topic official audio is highest priority
+        if (item.isTopic || chLower.endsWith("- topic")) {
+            score += 100
+        }
+
+        // 2. Official artist channels & official MV markers
+        if (chLower.contains("official") || item.rawTitle.contains("【MV】") || item.rawTitle.contains("[MV]") ||
+            item.rawTitle.contains("Official Music Video", ignoreCase = true) || item.rawTitle.contains("Official Video", ignoreCase = true)) {
+            score += 50
+        }
+
+        // 3. Exact matching bonuses
+        if (tLower == qLower) {
+            score += 40
+        } else if (tLower.contains(qLower)) {
+            score += 20
+        }
+
+        val queryTokens = qLower.split(" ").filter { it.isNotBlank() }
+        for (token in queryTokens) {
+            if (tLower.contains(token)) score += 10
+            if (chLower.contains(token)) score += 10
+        }
+
+        return score
     }
 
     private fun fetchChannelViaBrowse(channelId: String, params: String?): Pair<ChannelInfo, List<SearchResultItem>> {
