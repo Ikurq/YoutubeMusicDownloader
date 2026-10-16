@@ -217,7 +217,7 @@ fun PlaylistsScreen(
                         ) {
                             Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("✨ AI 自動作成", fontWeight = FontWeight.Bold)
+                            Text("AI 自動作成", fontWeight = FontWeight.Bold)
                         }
                     }
 
@@ -227,7 +227,7 @@ fun PlaylistsScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = "プレイリストがありません。\n右上の「✨ AI 自動作成」または右下の＋ボタンから作成できます。",
+                                text = "プレイリストがありません。\n右上の「AI 自動作成」または右下の＋ボタンから作成できます。",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

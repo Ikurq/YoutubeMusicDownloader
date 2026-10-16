@@ -130,7 +130,7 @@ object GeminiMetadataCleaner {
             if (playlists.isEmpty() && tracks.size >= 2) {
                 playlists.add(
                     Playlist(
-                        name = "✨ マイソング コレクション",
+                        name = "マイソング コレクション",
                         trackIds = tracks.map { it.id }
                     )
                 )
@@ -159,7 +159,7 @@ object GeminiMetadataCleaner {
             }
 
             val promptText = """
-                Analyze the following list of music tracks and create 3 to 5 smart, creative, beautifully categorized playlists in Japanese (e.g. "🌸 J-POP ベストセレクション", "⚡ アニメ・ゲームテーマ集", "🌙 リラックス＆チルアウト").
+                Analyze the following list of music tracks and create 3 to 5 smart, beautifully categorized playlists in Japanese (e.g. "J-POP ベストセレクション", "アニメ・ゲームテーマ集", "リラックス＆チルアウト"). Do not include any emojis in playlist names.
 
                 Tracks input:
                 ${tracksArray.toString()}
@@ -167,7 +167,7 @@ object GeminiMetadataCleaner {
                 Respond ONLY with a valid JSON array of playlists:
                 [
                   {
-                    "name": "プレイリスト名 (絵文字付き)",
+                    "name": "プレイリスト名",
                     "trackIds": ["id1", "id2", "id3"]
                   }
                 ]
@@ -208,7 +208,7 @@ object GeminiMetadataCleaner {
                         val resultPlaylists = mutableListOf<Playlist>()
                         for (i in 0 until parsedArray.length()) {
                             val item = parsedArray.getJSONObject(i)
-                            val name = item.optString("name", "✨ AIプレイリスト")
+                            val name = item.optString("name", "AIプレイリスト")
                             val trackIdsJson = item.optJSONArray("trackIds")
                             val ids = mutableListOf<String>()
                             if (trackIdsJson != null) {

@@ -148,7 +148,7 @@ fun LibraryScreen(
             FilterChip(
                 selected = showOnlyFavorites,
                 onClick = { showOnlyFavorites = true },
-                label = { Text("♥ お気に入り ($favoriteCount)") },
+                label = { Text("お気に入り ($favoriteCount)") },
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Default.Favorite,
@@ -207,7 +207,7 @@ fun LibraryScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = if (showOnlyFavorites) "お気に入りの楽曲がまだありません。\n楽曲の「♥」アイコンをタップしてお気に入りに追加できます。"
+                    text = if (showOnlyFavorites) "お気に入りの楽曲がまだありません。\n楽曲のお気に入りアイコンをタップしてお気に入りに追加できます。"
                     else if (searchQuery.isBlank()) "ライブラリに楽曲がありません。\n「検索 & DL」タブから保存、または右上の「端末から追加」をご利用ください。"
                     else "検索条件に一致する楽曲がありません。",
                     style = MaterialTheme.typography.bodyMedium,

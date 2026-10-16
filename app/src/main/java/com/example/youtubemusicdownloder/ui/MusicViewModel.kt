@@ -133,14 +133,14 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         if (currentTracks.isEmpty()) return
 
         viewModelScope.launch {
-            _statusMessage.value = "✨ Gemini AIが楽曲を分析してプレイリストを自動作成中..."
+            _statusMessage.value = "Gemini AIが楽曲を分析してプレイリストを自動作成中..."
             try {
                 val aiPlaylists = GeminiMetadataCleaner.generateSmartPlaylists(currentTracks, _apiKey.value)
                 if (aiPlaylists.isNotEmpty()) {
                     val merged = (_playlists.value + aiPlaylists).distinctBy { it.name }
                     _playlists.value = merged
                     repository.savePlaylists(merged)
-                    _statusMessage.value = "✨ Gemini AIが${aiPlaylists.size}個のプレイリストを自動作成しました！"
+                    _statusMessage.value = "Gemini AIが${aiPlaylists.size}個のプレイリストを自動作成しました"
                 } else {
                     _statusMessage.value = "プレイリスト作成対象の楽曲が不足しています"
                 }
@@ -395,7 +395,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
-        _statusMessage.value = if (isNowFavorite) "♥ お気に入りに追加しました" else "お気に入りを解除しました"
+        _statusMessage.value = if (isNowFavorite) "お気に入りに追加しました" else "お気に入りを解除しました"
     }
 
     override fun onCleared() {
