@@ -469,7 +469,7 @@ fun UrlSearchScreen(
                                     },
                                     label = { Text(filter.label, style = MaterialTheme.typography.labelMedium) },
                                     leadingIcon = if (searchFilter == filter) {
-                                        {
+                                        @Composable {
                                             Icon(
                                                 imageVector = Icons.Default.Check,
                                                 contentDescription = null,

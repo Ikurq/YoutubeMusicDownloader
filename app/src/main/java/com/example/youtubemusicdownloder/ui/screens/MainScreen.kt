@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.youtubemusicdownloder.data.SearchFilter
 import com.example.youtubemusicdownloder.model.Track
 import com.example.youtubemusicdownloder.ui.MusicViewModel
 import com.example.youtubemusicdownloder.ui.components.AddTrackToPlaylistDialog
