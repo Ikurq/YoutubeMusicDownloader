@@ -82,8 +82,8 @@ fun MainScreen(
     }
 
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
-    var showPlayerSheet by remember { mutableStateOf(false) }
-    var showQueueSheet by remember { mutableStateOf(false) }
+    var showPlayerSheet by rememberSaveable { mutableStateOf(false) }
+    var showQueueSheet by rememberSaveable { mutableStateOf(false) }
     var trackToAddToPlaylist by remember { mutableStateOf<Track?>(null) }
 
     val tracks by viewModel.tracks.collectAsState()
@@ -100,7 +100,11 @@ fun MainScreen(
     val searchFilter by viewModel.searchFilter.collectAsState()
     val searchSuggestions by viewModel.searchSuggestions.collectAsState()
 
-    BackHandler(enabled = selectedChannel != null) {
+    BackHandler(enabled = showPlayerSheet) {
+        showPlayerSheet = false
+    }
+
+    BackHandler(enabled = !showPlayerSheet && selectedChannel != null) {
         viewModel.closeChannel()
     }
 
@@ -132,37 +136,8 @@ fun MainScreen(
         }
     }
 
-    if (showPlayerSheet && currentTrack != null) {
-        val currentTrackId = currentTrack!!.id
-        val isFav = tracks.find { it.id == currentTrackId }?.isFavorite ?: currentTrack!!.isFavorite
-
-        PlayerSheet(
-            track = currentTrack!!,
-            isPlaying = isPlaying,
-            currentPositionMs = currentPositionMs,
-            durationMs = durationMs,
-            repeatMode = repeatMode,
-            isShuffle = isShuffle,
-            isFavorite = isFav,
-            playbackSpeed = playbackSpeed,
-            sleepTimerMinutes = sleepTimerMinutes,
-            sleepTimerRemainingSeconds = sleepTimerRemainingSeconds,
-            relatedTracks = relatedTracks,
-            onPlayPauseClick = { viewModel.togglePlayPause() },
-            onNextClick = { viewModel.nextTrack() },
-            onPreviousClick = { viewModel.previousTrack() },
-            onSeek = { viewModel.seekTo(it) },
-            onToggleRepeat = { viewModel.toggleRepeatMode() },
-            onToggleShuffle = { viewModel.toggleShuffle() },
-            onToggleFavorite = { viewModel.toggleFavorite(currentTrackId) },
-            onSpeedChange = { viewModel.setPlaybackSpeed(it) },
-            onSetSleepTimer = { viewModel.setSleepTimer(it) },
-            onAddRelatedTrack = { url, title -> viewModel.addToDownloadQueue(url, title) },
-            onCloseClick = { showPlayerSheet = false }
-        )
-    } else {
-        Scaffold(
-            topBar = {
+    Scaffold(
+        topBar = {
                 TopAppBar(
                     title = {
                         Text(
@@ -189,7 +164,7 @@ fun MainScreen(
                                         Text(
                                             text = "${downloadQueue.size}",
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = Color.White,
+                                            color = MaterialTheme.colorScheme.onPrimary,
                                             modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
                                             fontWeight = FontWeight.Bold
                                         )
@@ -209,7 +184,7 @@ fun MainScreen(
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Color.White,
+                        containerColor = MaterialTheme.colorScheme.surface,
                         titleContentColor = MaterialTheme.colorScheme.onSurface
                     )
                 )
@@ -229,7 +204,7 @@ fun MainScreen(
                     }
 
                     NavigationBar(
-                        containerColor = Color.White,
+                        containerColor = MaterialTheme.colorScheme.surface,
                         tonalElevation = 8.dp
                     ) {
                         NavigationBarItem(
@@ -347,6 +322,35 @@ fun MainScreen(
                 }
             }
         }
+
+    if (showPlayerSheet && currentTrack != null) {
+        val currentTrackId = currentTrack!!.id
+        val isFav = tracks.find { it.id == currentTrackId }?.isFavorite ?: currentTrack!!.isFavorite
+
+        PlayerSheet(
+            track = currentTrack!!,
+            isPlaying = isPlaying,
+            currentPositionMs = currentPositionMs,
+            durationMs = durationMs,
+            repeatMode = repeatMode,
+            isShuffle = isShuffle,
+            isFavorite = isFav,
+            playbackSpeed = playbackSpeed,
+            sleepTimerMinutes = sleepTimerMinutes,
+            sleepTimerRemainingSeconds = sleepTimerRemainingSeconds,
+            relatedTracks = relatedTracks,
+            onPlayPauseClick = { viewModel.togglePlayPause() },
+            onNextClick = { viewModel.nextTrack() },
+            onPreviousClick = { viewModel.previousTrack() },
+            onSeek = { viewModel.seekTo(it) },
+            onToggleRepeat = { viewModel.toggleRepeatMode() },
+            onToggleShuffle = { viewModel.toggleShuffle() },
+            onToggleFavorite = { viewModel.toggleFavorite(currentTrackId) },
+            onSpeedChange = { viewModel.setPlaybackSpeed(it) },
+            onSetSleepTimer = { viewModel.setSleepTimer(it) },
+            onAddRelatedTrack = { url, title -> viewModel.addToDownloadQueue(url, title) },
+            onCloseClick = { showPlayerSheet = false }
+        )
     }
 
     // Download Queue Sheet

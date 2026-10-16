@@ -228,7 +228,7 @@ fun UrlSearchScreen(
                 shape = RoundedCornerShape(12.dp),
                 colors = OutlinedTextFieldDefaults.colors(
                     unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
-                    focusedContainerColor = Color.White
+                    focusedContainerColor = MaterialTheme.colorScheme.surface
                 )
             )
 
@@ -291,7 +291,7 @@ fun UrlSearchScreen(
                 }
             } else {
                 LazyColumn(modifier = Modifier.weight(1f)) {
-                    items(filteredVideos) { item ->
+                    items(filteredVideos, key = { it.videoId }) { item ->
                         SearchResultRow(
                             item = item,
                             onDownloadClick = {
@@ -355,7 +355,7 @@ fun UrlSearchScreen(
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
@@ -370,8 +370,8 @@ fun UrlSearchScreen(
                                 onQueryChange(it)
                             }
                         },
-                        label = { Text("楽曲名、アーティスト名、チャンネル名、または YouTube URL") },
-                        placeholder = { Text("検索キーワード、チャンネルURL、または YouTube URL") },
+                        label = { Text("楽曲名、アーティスト名、またはURL") },
+                        placeholder = { Text("曲名、アーティスト、YouTube URL") },
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Default.Search,
@@ -403,7 +403,7 @@ fun UrlSearchScreen(
                         shape = RoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(
                             unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                            focusedContainerColor = Color.White
+                            focusedContainerColor = MaterialTheme.colorScheme.surface
                         )
                     )
 
@@ -427,7 +427,7 @@ fun UrlSearchScreen(
                                             onClearSuggestions()
                                             onSearch(suggestion)
                                         }
-                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Icon(
@@ -441,6 +441,8 @@ fun UrlSearchScreen(
                                         text = suggestion,
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
                                         modifier = Modifier.weight(1f)
                                     )
                                 }
@@ -461,9 +463,9 @@ fun UrlSearchScreen(
                                 FilterChip(
                                     selected = searchFilter == filter,
                                     onClick = {
+                                        onClearSuggestions()
                                         onFilterChange(filter)
-                                        if (searchInput.isNotBlank() && videoId == null) {
-                                            onClearSuggestions()
+                                        if (searchInput.isNotBlank() && videoId == null && searchResults.isEmpty()) {
                                             onSearch(searchInput)
                                         }
                                     },
@@ -569,7 +571,7 @@ fun UrlSearchScreen(
                 LazyColumn(
                     modifier = Modifier.weight(1f)
                 ) {
-                    items(searchResults) { item ->
+                    items(searchResults, key = { it.videoId }) { item ->
                         SearchResultRow(
                             item = item,
                             onDownloadClick = {

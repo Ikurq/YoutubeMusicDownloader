@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -31,10 +32,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -57,8 +60,9 @@ fun LibraryScreen(
     onImportLocalFiles: (uris: List<Uri>) -> Unit,
     onToggleFavorite: (trackId: String) -> Unit
 ) {
-    var searchQuery by remember { mutableStateOf("") }
-    var showOnlyFavorites by remember { mutableStateOf(false) }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    var showOnlyFavorites by rememberSaveable { mutableStateOf(false) }
+    var trackToDelete by remember { mutableStateOf<Track?>(null) }
 
     val audioPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetMultipleContents()
@@ -207,19 +211,19 @@ fun LibraryScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = if (showOnlyFavorites) "お気に入りの楽曲がまだありません。\n楽曲のお気に入りアイコンをタップしてお気に入りに追加できます。"
-                    else if (searchQuery.isBlank()) "ライブラリに楽曲がありません。\n「検索 & DL」タブから保存、または右上の「端末から追加」をご利用ください。"
-                    else "検索条件に一致する楽曲がありません。",
+                    text = if (searchQuery.isNotBlank()) "検索条件に一致する楽曲がありません。"
+                    else if (showOnlyFavorites) "お気に入りの楽曲がまだありません。\n楽曲のお気に入りアイコンをタップしてお気に入りに追加できます。"
+                    else "ライブラリに楽曲がありません。\n「検索 & DL」タブから保存、または右上の「端末から追加」をご利用ください。",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         } else {
             LazyColumn {
-                items(filteredTracks) { track ->
+                items(filteredTracks, key = { it.id }) { track ->
                     TrackItem(
                         track = track,
-                        isPlaying = currentTrack?.id == track.id && isPlaying,
+                        isPlaying = currentTrack?.id == track.id,
                         isDownloading = downloadingTrackIds.contains(track.id),
                         onTrackClick = { onTrackClick(track, filteredTracks) },
                         onToggleFavorite = { onToggleFavorite(track.id) },
@@ -227,10 +231,32 @@ fun LibraryScreen(
                         onDownloadClick = if (!track.isDownloaded) {
                             { onDownloadClick(track) }
                         } else null,
-                        onDeleteClick = { onDeleteClick(track.id) }
+                        onDeleteClick = { trackToDelete = track }
                     )
                 }
             }
         }
+    }
+
+    trackToDelete?.let { track ->
+        AlertDialog(
+            onDismissRequest = { trackToDelete = null },
+            title = { Text("楽曲の削除") },
+            text = { Text("「${track.title}」を削除しますか？\n端末内の音声ファイルも削除されます。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    val id = track.id
+                    trackToDelete = null
+                    onDeleteClick(id)
+                }) {
+                    Text("削除", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { trackToDelete = null }) {
+                    Text("キャンセル")
+                }
+            }
+        )
     }
 }

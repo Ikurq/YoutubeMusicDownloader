@@ -44,7 +44,7 @@ fun PlaylistItem(
             .fillMaxWidth()
             .padding(vertical = 6.dp)
             .clickable { onPlaylistClick() },
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         shape = RoundedCornerShape(16.dp)
     ) {

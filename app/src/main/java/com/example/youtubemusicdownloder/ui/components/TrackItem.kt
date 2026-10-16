@@ -64,7 +64,7 @@ fun TrackItem(
             .clickable { onTrackClick() },
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isPlaying) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else Color.White
+            containerColor = if (isPlaying) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surface
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
@@ -157,7 +157,7 @@ fun TrackItem(
                 IconButton(onClick = onDownloadClick) {
                     Icon(
                         imageVector = Icons.Default.Download,
-                        contentDescription = "Download",
+                        contentDescription = "ダウンロード",
                         tint = MaterialTheme.colorScheme.outline
                     )
                 }
@@ -168,7 +168,7 @@ fun TrackItem(
                     Icon(
                         imageVector = if (track.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                         contentDescription = if (track.isFavorite) "お気に入り解除" else "お気に入りに追加",
-                        tint = if (track.isFavorite) Color(0xFFE91E63) else MaterialTheme.colorScheme.outline,
+                        tint = if (track.isFavorite) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline,
                         modifier = Modifier.size(22.dp)
                     )
                 }
@@ -178,7 +178,7 @@ fun TrackItem(
                 IconButton(onClick = { showMenu = true }) {
                     Icon(
                         imageVector = Icons.Default.MoreVert,
-                        contentDescription = "Options",
+                        contentDescription = "その他の操作",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -194,7 +194,7 @@ fun TrackItem(
                                 Icon(
                                     imageVector = if (track.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                                     contentDescription = null,
-                                    tint = if (track.isFavorite) Color(0xFFE91E63) else MaterialTheme.colorScheme.onSurface
+                                    tint = if (track.isFavorite) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
                                 )
                             },
                             onClick = {

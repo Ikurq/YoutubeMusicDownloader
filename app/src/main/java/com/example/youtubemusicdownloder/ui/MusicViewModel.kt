@@ -21,12 +21,17 @@ import com.example.youtubemusicdownloder.media.MusicPlayerManager
 import com.example.youtubemusicdownloder.model.Playlist
 import com.example.youtubemusicdownloder.model.RepeatMode
 import com.example.youtubemusicdownloder.model.Track
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 class MusicViewModel(application: Application) : AndroidViewModel(application) {
+
+    private var searchJob: Job? = null
+    private var suggestJob: Job? = null
 
     private val repository = MusicRepository(application)
     val playerManager = MusicPlayerManager(application)
@@ -201,7 +206,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 currentList.addAll(0, newTracks)
                 _tracks.value = currentList
                 repository.saveTracks(currentList)
-                _statusMessage.value = "${importedCount}件のローカル楽曲を追加しました！"
+                _statusMessage.value = "${importedCount}件のローカル楽曲を追加しました"
             } else {
                 _statusMessage.value = "ローカルファイルの読み込みに失敗しました"
             }
@@ -216,7 +221,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 val update = UpdateManager.checkForUpdates()
                 if (update != null) {
                     _availableUpdate.value = update
-                    _statusMessage.value = "新しいバージョン（${update.tagName}）が見つかりました！"
+                    _statusMessage.value = "新しいバージョン（${update.tagName}）が見つかりました"
                 } else if (!silent) {
                     _statusMessage.value = "お使いのアプリは最新バージョンです（${UpdateManager.CURRENT_VERSION}）"
                 }
@@ -277,29 +282,36 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun fetchSuggestions(query: String) {
-        if (query.isBlank()) {
+        val trimmed = query.trim()
+        if (trimmed.isBlank()) {
+            suggestJob?.cancel()
             _searchSuggestions.value = emptyList()
             return
         }
-        viewModelScope.launch {
-            val suggestions = YoutubeSearchService.fetchSearchSuggestions(query)
+        suggestJob?.cancel()
+        suggestJob = viewModelScope.launch {
+            delay(250)
+            val suggestions = YoutubeSearchService.fetchSearchSuggestions(trimmed)
             _searchSuggestions.value = suggestions
         }
     }
 
     fun clearSuggestions() {
+        suggestJob?.cancel()
         _searchSuggestions.value = emptyList()
     }
 
     fun searchYouTube(query: String, filter: SearchFilter = _searchFilter.value) {
-        if (query.isBlank()) return
-        _lastSearchQuery.value = query
-        _searchSuggestions.value = emptyList()
-        viewModelScope.launch {
+        val trimmed = query.trim()
+        if (trimmed.isBlank()) return
+        _lastSearchQuery.value = trimmed
+        clearSuggestions()
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
             _isSearching.value = true
             _statusMessage.value = "YouTube Music / YouTube を高精度検索中..."
             try {
-                val searchData = YoutubeSearchService.search(query, _apiKey.value, filter)
+                val searchData = YoutubeSearchService.search(trimmed, _apiKey.value, filter)
                 _searchResults.value = searchData.videos
                 _matchedChannels.value = searchData.matchedChannels
 
@@ -389,35 +401,47 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
         _playlists.value = updatedPlaylists
         repository.savePlaylists(updatedPlaylists)
+        _statusMessage.value = "「${trackToDelete?.title ?: "楽曲"}」を削除しました"
     }
 
     fun createPlaylist(name: String) {
-        if (name.isBlank()) return
-        val newPl = Playlist(name = name)
+        val trimmed = name.trim()
+        if (trimmed.isBlank()) return
+        val newPl = Playlist(name = trimmed)
         val updatedList = _playlists.value + newPl
         _playlists.value = updatedList
         repository.savePlaylists(updatedList)
-        _statusMessage.value = "プレイリスト「$name」を作成しました"
+        _statusMessage.value = "プレイリスト「$trimmed」を作成しました"
     }
 
     fun deletePlaylist(playlistId: String) {
+        val plName = _playlists.value.find { it.id == playlistId }?.name ?: ""
         val updatedList = _playlists.value.filter { it.id != playlistId }
         _playlists.value = updatedList
         repository.savePlaylists(updatedList)
+        _statusMessage.value = "プレイリスト「$plName」を削除しました"
     }
 
     fun addTrackToPlaylist(playlistId: String, trackId: String) {
+        var alreadyExists = false
         val updatedPlaylists = _playlists.value.map { pl ->
             if (pl.id == playlistId) {
                 if (!pl.trackIds.contains(trackId)) {
                     pl.copy(trackIds = pl.trackIds + trackId)
-                } else pl
+                } else {
+                    alreadyExists = true
+                    pl
+                }
             } else pl
         }
         _playlists.value = updatedPlaylists
         repository.savePlaylists(updatedPlaylists)
         val plName = updatedPlaylists.find { it.id == playlistId }?.name ?: ""
-        _statusMessage.value = "プレイリスト「$plName」に追加しました"
+        if (alreadyExists) {
+            _statusMessage.value = "既に「$plName」に追加されています"
+        } else {
+            _statusMessage.value = "プレイリスト「$plName」に追加しました"
+        }
     }
 
     fun removeTrackFromPlaylist(playlistId: String, trackId: String) {
@@ -428,6 +452,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         }
         _playlists.value = updatedPlaylists
         repository.savePlaylists(updatedPlaylists)
+        _statusMessage.value = "プレイリストから楽曲を削除しました"
     }
 
     fun playTrack(track: Track, playlistTracks: List<Track>? = null) {
@@ -437,7 +462,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun playPlaylist(playlist: Playlist, startShuffle: Boolean = false) {
-        val playlistTracks = _tracks.value.filter { playlist.trackIds.contains(it.id) }
+        val tracksById = _tracks.value.associateBy { it.id }
+        val playlistTracks = playlist.trackIds.mapNotNull { tracksById[it] }
         if (playlistTracks.isEmpty()) return
 
         if (startShuffle) {
@@ -447,6 +473,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             val randomTrack = playlistTracks.random()
             playTrack(randomTrack, playlistTracks)
         } else {
+            if (playerManager.isShuffle.value) {
+                playerManager.toggleShuffle()
+            }
             playTrack(playlistTracks.first(), playlistTracks)
         }
     }

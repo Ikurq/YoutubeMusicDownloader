@@ -75,11 +75,14 @@ fun DownloadQueueSheet(
                     BoxCenterMessage(message = "ダウンロードキューは空です。\n楽曲を検索して追加できます。")
                 } else {
                     LazyColumn(modifier = Modifier.weight(1f)) {
-                        items(queue) { item ->
+                        items(queue, key = { it.id }) { item ->
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
+                                    .padding(vertical = 4.dp)
+                                    .clickable(enabled = item.status == DownloadStatus.FAILED) {
+                                        onRetryItem(item.id)
+                                    },
                                 shape = RoundedCornerShape(12.dp),
                                 colors = CardDefaults.cardColors(
                                     containerColor = if (item.status == DownloadStatus.FAILED) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)

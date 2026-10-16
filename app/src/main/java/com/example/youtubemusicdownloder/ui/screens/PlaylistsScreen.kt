@@ -1,5 +1,6 @@
 package com.example.youtubemusicdownloder.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,11 +15,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FloatingActionButton
@@ -28,10 +30,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,14 +62,19 @@ fun PlaylistsScreen(
     onRemoveFromPlaylist: (playlistId: String, trackId: String) -> Unit,
     onAddToPlaylistClick: (track: Track) -> Unit
 ) {
-    var selectedPlaylist by remember { mutableStateOf<Playlist?>(null) }
+    var selectedPlaylistId by rememberSaveable { mutableStateOf<String?>(null) }
     var showCreateDialog by remember { mutableStateOf(false) }
+    var playlistToDelete by remember { mutableStateOf<Playlist?>(null) }
 
-    val currentSelected = playlists.find { it.id == selectedPlaylist?.id }
+    val currentSelected = playlists.find { it.id == selectedPlaylistId }
+
+    BackHandler(enabled = currentSelected != null) {
+        selectedPlaylistId = null
+    }
 
     Scaffold(
         floatingActionButton = {
-            if (selectedPlaylist == null) {
+            if (currentSelected == null) {
                 FloatingActionButton(
                     onClick = { showCreateDialog = true },
                     containerColor = MaterialTheme.colorScheme.primary,
@@ -86,7 +95,8 @@ fun PlaylistsScreen(
         ) {
             if (currentSelected != null) {
                 // Playlist Detail View
-                val playlistTracks = allTracks.filter { currentSelected.trackIds.contains(it.id) }
+                val tracksById = allTracks.associateBy { it.id }
+                val playlistTracks = currentSelected.trackIds.mapNotNull { tracksById[it] }
                 val totalDurationMs = playlistTracks.sumOf { it.durationMs }
 
                 Column(
@@ -98,9 +108,9 @@ fun PlaylistsScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        IconButton(onClick = { selectedPlaylist = null }) {
+                        IconButton(onClick = { selectedPlaylistId = null }) {
                             Icon(
-                                imageVector = Icons.Default.ArrowBack,
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = "戻る"
                             )
                         }
@@ -109,7 +119,9 @@ fun PlaylistsScreen(
                             Text(
                                 text = currentSelected.name,
                                 style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                             )
                             Text(
                                 text = "${playlistTracks.size} 曲 • ${formatTotalDuration(totalDurationMs)}",
@@ -169,10 +181,10 @@ fun PlaylistsScreen(
                         LazyColumn(
                             modifier = Modifier.weight(1f)
                         ) {
-                            items(playlistTracks) { track ->
+                            items(playlistTracks, key = { it.id }) { track ->
                                 TrackItem(
                                     track = track,
-                                    isPlaying = currentTrack?.id == track.id && isPlaying,
+                                    isPlaying = currentTrack?.id == track.id,
                                     isDownloading = downloadingTrackIds.contains(track.id),
                                     onTrackClick = { onPlayTrack(track, playlistTracks) },
                                     onAddToPlaylistClick = { onAddToPlaylistClick(track) },
@@ -234,13 +246,13 @@ fun PlaylistsScreen(
                         }
                     } else {
                         LazyColumn(modifier = Modifier.padding(horizontal = 16.dp)) {
-                            items(playlists) { playlist ->
+                            items(playlists, key = { it.id }) { playlist ->
                                 PlaylistItem(
                                     playlist = playlist,
-                                    onPlaylistClick = { selectedPlaylist = playlist },
+                                    onPlaylistClick = { selectedPlaylistId = playlist.id },
                                     onPlayClick = { onPlayPlaylist(playlist, false) },
                                     onShuffleClick = { onPlayPlaylist(playlist, true) },
-                                    onDeleteClick = { onDeletePlaylist(playlist.id) }
+                                    onDeleteClick = { playlistToDelete = playlist }
                                 )
                             }
                         }
@@ -254,6 +266,28 @@ fun PlaylistsScreen(
         CreatePlaylistDialog(
             onCreate = { onCreatePlaylist(it) },
             onDismiss = { showCreateDialog = false }
+        )
+    }
+
+    playlistToDelete?.let { pl ->
+        AlertDialog(
+            onDismissRequest = { playlistToDelete = null },
+            title = { Text("プレイリストの削除") },
+            text = { Text("プレイリスト「${pl.name}」を削除しますか？\n（ライブラリ内の楽曲ファイルは削除されません）") },
+            confirmButton = {
+                TextButton(onClick = {
+                    val id = pl.id
+                    playlistToDelete = null
+                    onDeletePlaylist(id)
+                }) {
+                    Text("削除", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { playlistToDelete = null }) {
+                    Text("キャンセル")
+                }
+            }
         )
     }
 }
