@@ -91,62 +91,88 @@ class DownloadQueueManager(private val context: Context) {
         processJob = scope.launch {
             _isProcessing.value = true
 
-            while (true) {
-                val currentQueue = _queue.value
-                val pendingItem = currentQueue.firstOrNull { it.status == DownloadStatus.PENDING } ?: break
+            try {
+                while (true) {
+                    val currentQueue = _queue.value
+                    val pendingItem = currentQueue.firstOrNull { it.status == DownloadStatus.PENDING } ?: break
+                    val remainingCount = currentQueue.count { it.status == DownloadStatus.PENDING }
 
-                // Update item status to DOWNLOADING
-                updateItem(pendingItem.id) {
-                    it.copy(status = DownloadStatus.DOWNLOADING, progressPercent = 0)
-                }
+                    // Update item status to DOWNLOADING
+                    updateItem(pendingItem.id) {
+                        it.copy(status = DownloadStatus.DOWNLOADING, progressPercent = 0)
+                    }
 
-                try {
-                    // Step 1: Parse Track metadata
-                    var track = YoutubeDownloader.parseTrackFromUrl(
-                        urlInput = pendingItem.url,
-                        customTitle = pendingItem.customTitle ?: pendingItem.title,
-                        apiKey = apiKey,
-                        customServerUrl = serverUrl
+                    com.example.youtubemusicdownloder.service.DownloadService.startOrUpdate(
+                        context,
+                        pendingItem.title,
+                        0,
+                        remainingCount
                     )
 
-                    // Step 2: Download audio file with live progress
-                    val file = YoutubeDownloader.downloadAudioToFile(context, track, serverUrl) { percent, downloaded, total ->
+                    try {
+                        var lastReportedPercent = 0
+                        var lastReportTime = 0L
+
+                        // Step 1: Parse Track metadata
+                        var track = YoutubeDownloader.parseTrackFromUrl(
+                            urlInput = pendingItem.url,
+                            customTitle = pendingItem.customTitle ?: pendingItem.title,
+                            apiKey = apiKey,
+                            customServerUrl = serverUrl
+                        )
+
+                        // Step 2: Download audio file with live progress
+                        val file = YoutubeDownloader.downloadAudioToFile(context, track, serverUrl) { percent, downloaded, total ->
+                            updateItem(pendingItem.id) {
+                                it.copy(
+                                    progressPercent = percent,
+                                    downloadedBytes = downloaded,
+                                    totalBytes = total
+                                )
+                            }
+
+                            val now = System.currentTimeMillis()
+                            if (percent - lastReportedPercent >= 2 || percent == 100 || (now - lastReportTime >= 500L && percent != lastReportedPercent)) {
+                                lastReportedPercent = percent
+                                lastReportTime = now
+                                com.example.youtubemusicdownloder.service.DownloadService.startOrUpdate(
+                                    context,
+                                    pendingItem.title,
+                                    percent,
+                                    remainingCount
+                                )
+                            }
+                        }
+
+                        val actualDuration = AudioDownloader.getAudioDurationMs(file)
+                        track = track.copy(
+                            localFilePath = file.absolutePath,
+                            isDownloaded = true,
+                            durationMs = if (actualDuration > 0L) actualDuration else track.durationMs
+                        )
+
+                        // Step 3: Complete & Notify
+                        updateItem(pendingItem.id) {
+                            it.copy(status = DownloadStatus.COMPLETED, progressPercent = 100)
+                        }
+
+                        onTrackDownloaded?.invoke(track)
+                        onStatusMessage?.invoke("DL完了: 「${track.title}」")
+                    } catch (e: Exception) {
+                        e.printStackTrace()
                         updateItem(pendingItem.id) {
                             it.copy(
-                                progressPercent = percent,
-                                downloadedBytes = downloaded,
-                                totalBytes = total
+                                status = DownloadStatus.FAILED,
+                                errorMessage = e.message ?: "ダウンロードエラー"
                             )
                         }
+                        onStatusMessage?.invoke("DL失敗: 「${pendingItem.title}」")
                     }
-
-                    val actualDuration = AudioDownloader.getAudioDurationMs(file)
-                    track = track.copy(
-                        localFilePath = file.absolutePath,
-                        isDownloaded = true,
-                        durationMs = if (actualDuration > 0L) actualDuration else track.durationMs
-                    )
-
-                    // Step 3: Complete & Notify
-                    updateItem(pendingItem.id) {
-                        it.copy(status = DownloadStatus.COMPLETED, progressPercent = 100)
-                    }
-
-                    onTrackDownloaded?.invoke(track)
-                    onStatusMessage?.invoke("DL完了: 「${track.title}」")
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                    updateItem(pendingItem.id) {
-                        it.copy(
-                            status = DownloadStatus.FAILED,
-                            errorMessage = e.message ?: "ダウンロードエラー"
-                        )
-                    }
-                    onStatusMessage?.invoke("DL失敗: 「${pendingItem.title}」")
                 }
+            } finally {
+                _isProcessing.value = false
+                com.example.youtubemusicdownloder.service.DownloadService.stop(context)
             }
-
-            _isProcessing.value = false
         }
     }
 
