@@ -79,6 +79,7 @@ object YoutubeDownloader {
         context: Context,
         track: Track,
         customServerUrl: String? = null,
+        userCookie: String? = null,
         onProgress: ((percent: Int, downloadedBytes: Long, totalBytes: Long) -> Unit)? = null
-    ): File = AudioDownloader.downloadAudioToFile(context, track, customServerUrl, onProgress)
+    ): File = AudioDownloader.downloadAudioToFile(context, track, customServerUrl, userCookie, onProgress)
 }

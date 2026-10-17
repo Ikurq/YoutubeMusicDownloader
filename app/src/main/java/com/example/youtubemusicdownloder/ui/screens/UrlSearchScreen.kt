@@ -93,7 +93,10 @@ fun UrlSearchScreen(
     onFilterChange: (SearchFilter) -> Unit = {},
     searchSuggestions: List<String> = emptyList(),
     onQueryChange: (String) -> Unit = {},
-    onClearSuggestions: () -> Unit = {}
+    onClearSuggestions: () -> Unit = {},
+    isLoggedIn: Boolean = false,
+    onLoginClick: () -> Unit = {},
+    onLogoutClick: () -> Unit = {}
 ) {
     var searchInput by remember { mutableStateOf("") }
     var channelFilterQuery by remember { mutableStateOf("") }
@@ -343,6 +346,9 @@ fun UrlSearchScreen(
                 ApiSettingsCard(
                     currentApiKey = apiKey,
                     currentServerUrl = antigravityServerUrl,
+                    isLoggedIn = isLoggedIn,
+                    onLoginClick = onLoginClick,
+                    onLogoutClick = onLogoutClick,
                     onSave = { key, url ->
                         onSaveApiKey(key)
                         onSaveAntigravityServerUrl(url)

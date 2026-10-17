@@ -16,8 +16,97 @@ object YoutubeStreamResolver {
         "https://iv.melmac.space"
     )
 
-    suspend fun fetchDirectAudioUrl(videoId: String, customServerUrl: String? = null): String? = withContext(Dispatchers.IO) {
+    suspend fun fetchDirectAudioUrl(
+        videoId: String,
+        customServerUrl: String? = null,
+        userCookie: String? = null
+    ): String? = withContext(Dispatchers.IO) {
         val errors = mutableListOf<String>()
+
+        // 0. If user is logged in, use authenticated YouTube Music InnerTube request (direct bypass of LOGIN_REQUIRED & full official stream access)
+        if (!userCookie.isNullOrBlank()) {
+            try {
+                val sapisid = UserAccountManager.extractCookieValue(userCookie, "SAPISID")
+                    ?: UserAccountManager.extractCookieValue(userCookie, "__Secure-3PAPISID")
+
+                val url = URL("https://music.youtube.com/youtubei/v1/player")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.requestMethod = "POST"
+                conn.setRequestProperty("Content-Type", "application/json")
+                conn.setRequestProperty("Accept", "application/json")
+                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
+                conn.setRequestProperty("Referer", "https://music.youtube.com/")
+                conn.setRequestProperty("Origin", "https://music.youtube.com")
+                conn.setRequestProperty("Cookie", userCookie)
+                conn.setRequestProperty("X-Origin", "https://music.youtube.com")
+                conn.setRequestProperty("X-Goog-AuthUser", "0")
+                conn.setRequestProperty("X-Goog-Api-Key", "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8")
+
+                if (sapisid != null) {
+                    val sapisidHash = UserAccountManager.generateSapisidHash(sapisid, "https://music.youtube.com")
+                    conn.setRequestProperty("Authorization", "SAPISIDHASH $sapisidHash")
+                }
+
+                conn.connectTimeout = 8000
+                conn.readTimeout = 8000
+                conn.doOutput = true
+
+                val jsonBody = JSONObject().apply {
+                    put("videoId", videoId)
+                    val contextObj = JSONObject().apply {
+                        val clientObj = JSONObject().apply {
+                            put("clientName", "WEB_REMIX")
+                            put("clientVersion", "1.20240708.01.00")
+                            put("hl", "ja")
+                            put("gl", "JP")
+                        }
+                        put("client", clientObj)
+                    }
+                    put("context", contextObj)
+                }
+
+                conn.outputStream.use { os ->
+                    os.write(jsonBody.toString().toByteArray(Charsets.UTF_8))
+                }
+
+                if (conn.responseCode == 200) {
+                    val responseStr = conn.inputStream.bufferedReader().use { it.readText() }
+                    val json = JSONObject(responseStr)
+                    val status = json.optJSONObject("playabilityStatus")?.optString("status")
+
+                    if (status == "OK") {
+                        val streamingData = json.optJSONObject("streamingData")
+                        val adaptiveFormats = streamingData?.optJSONArray("adaptiveFormats")
+                        if (adaptiveFormats != null) {
+                            var bestAudioUrl: String? = null
+                            var highestBitrate = 0
+                            for (i in 0 until adaptiveFormats.length()) {
+                                val format = adaptiveFormats.getJSONObject(i)
+                                val mimeType = format.optString("mimeType", format.optString("type"))
+                                val audioUrl = format.optString("url")
+                                val bitrate = format.optInt("bitrate", 0)
+
+                                if (mimeType.contains("audio") && audioUrl.isNotBlank()) {
+                                    if (bitrate > highestBitrate) {
+                                        highestBitrate = bitrate
+                                        bestAudioUrl = audioUrl
+                                    }
+                                }
+                            }
+                            if (bestAudioUrl != null) {
+                                return@withContext bestAudioUrl
+                            }
+                        }
+                    } else {
+                        errors.add("AuthInnerTube: $status")
+                    }
+                } else {
+                    errors.add("AuthInnerTube HTTP ${conn.responseCode}")
+                }
+            } catch (e: Exception) {
+                errors.add("AuthInnerTube: ${e.message}")
+            }
+        }
 
         // 1. Try Custom Antigravity / Cobalt Server if configured
         if (!customServerUrl.isNullOrBlank()) {

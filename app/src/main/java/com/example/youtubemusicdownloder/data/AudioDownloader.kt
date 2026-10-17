@@ -86,17 +86,19 @@ object AudioDownloader {
         context: Context,
         track: Track,
         customServerUrl: String? = null,
+        userCookie: String? = null,
         onProgress: ((percent: Int, downloadedBytes: Long, totalBytes: Long) -> Unit)? = null
     ): File = withContext(Dispatchers.IO) {
+        val effectiveCookie = if (!userCookie.isNullOrBlank()) userCookie else UserAccountManager(context).getCookie().ifBlank { null }
         val videoId = YoutubeExtractor.extractVideoId(track.youtubeUrl) ?: YoutubeExtractor.extractVideoId(track.audioUrl)
 
         var streamUrl: String? = null
         var lastResolverError: String? = null
 
-        // 1. Primary Attempt: Resolve stream from the track's original videoId
+        // 1. Primary Attempt: Resolve stream from the track's original videoId (with user authentication if logged in)
         if (videoId != null) {
             try {
-                streamUrl = YoutubeStreamResolver.fetchDirectAudioUrl(videoId, customServerUrl)
+                streamUrl = YoutubeStreamResolver.fetchDirectAudioUrl(videoId, customServerUrl, effectiveCookie)
             } catch (e: Exception) {
                 lastResolverError = e.message
             }
@@ -154,7 +156,7 @@ object AudioDownloader {
             attempts++
             try {
                 val activeUrl = if (attempts > 1 && videoId != null) {
-                    YoutubeStreamResolver.fetchDirectAudioUrl(videoId, customServerUrl) ?: streamUrl
+                    YoutubeStreamResolver.fetchDirectAudioUrl(videoId, customServerUrl, effectiveCookie) ?: streamUrl
                 } else streamUrl
 
                 val conn = URL(activeUrl).openConnection() as HttpURLConnection
@@ -190,7 +192,7 @@ object AudioDownloader {
                     success = true
                 } else if (responseCode == 403 || responseCode == 410) {
                     if (videoId != null) {
-                        val freshUrl = YoutubeStreamResolver.fetchDirectAudioUrl(videoId, customServerUrl)
+                        val freshUrl = YoutubeStreamResolver.fetchDirectAudioUrl(videoId, customServerUrl, effectiveCookie)
                         if (freshUrl != null) streamUrl = freshUrl
                     }
                     lastError = IllegalStateException("HTTP Error $responseCode (トークン期限切れ)")

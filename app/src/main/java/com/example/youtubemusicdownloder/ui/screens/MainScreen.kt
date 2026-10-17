@@ -57,6 +57,7 @@ import com.example.youtubemusicdownloder.model.Track
 import com.example.youtubemusicdownloder.ui.MusicViewModel
 import com.example.youtubemusicdownloder.ui.components.AddTrackToPlaylistDialog
 import com.example.youtubemusicdownloder.ui.components.DownloadQueueSheet
+import com.example.youtubemusicdownloder.ui.components.LoginWebViewDialog
 import com.example.youtubemusicdownloder.ui.components.MiniPlayer
 import com.example.youtubemusicdownloder.ui.components.UpdateDialog
 
@@ -84,12 +85,14 @@ fun MainScreen(
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var showPlayerSheet by rememberSaveable { mutableStateOf(false) }
     var showQueueSheet by rememberSaveable { mutableStateOf(false) }
+    var showLoginDialog by remember { mutableStateOf(false) }
     var trackToAddToPlaylist by remember { mutableStateOf<Track?>(null) }
 
     val tracks by viewModel.tracks.collectAsState()
     val playlists by viewModel.playlists.collectAsState()
     val apiKey by viewModel.apiKey.collectAsState()
     val antigravityServerUrl by viewModel.antigravityServerUrl.collectAsState()
+    val isUserLoggedIn by viewModel.isUserLoggedIn.collectAsState()
     val searchResults by viewModel.searchResults.collectAsState()
     val matchedChannels by viewModel.matchedChannels.collectAsState()
     val selectedChannel by viewModel.selectedChannel.collectAsState()
@@ -275,7 +278,10 @@ fun MainScreen(
                         onFilterChange = { viewModel.setSearchFilter(it) },
                         searchSuggestions = searchSuggestions,
                         onQueryChange = { viewModel.fetchSuggestions(it) },
-                        onClearSuggestions = { viewModel.clearSuggestions() }
+                        onClearSuggestions = { viewModel.clearSuggestions() },
+                        isLoggedIn = isUserLoggedIn,
+                        onLoginClick = { showLoginDialog = true },
+                        onLogoutClick = { viewModel.logoutUser() }
                     )
                     1 -> PlaylistsScreen(
                         playlists = playlists,
@@ -389,6 +395,16 @@ fun MainScreen(
                 viewModel.addTrackToPlaylist(playlistId, track.id)
             },
             onDismiss = { trackToAddToPlaylist = null }
+        )
+    }
+
+    if (showLoginDialog) {
+        LoginWebViewDialog(
+            onDismissRequest = { showLoginDialog = false },
+            onLoginSuccess = { cookie ->
+                viewModel.saveUserCookie(cookie)
+                showLoginDialog = false
+            }
         )
     }
 }

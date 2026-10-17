@@ -36,6 +36,19 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = MusicRepository(application)
     val playerManager = MusicPlayerManager(application)
     val downloadQueueManager = DownloadQueueManager(application)
+    val userAccountManager = com.example.youtubemusicdownloder.data.UserAccountManager(application)
+
+    val isUserLoggedIn: StateFlow<Boolean> = userAccountManager.isLoggedIn
+
+    fun saveUserCookie(cookie: String) {
+        userAccountManager.saveCookie(cookie)
+        _statusMessage.value = "YouTubeアカウントにログインしました"
+    }
+
+    fun logoutUser() {
+        userAccountManager.clearAccount()
+        _statusMessage.value = "ログアウトしました"
+    }
 
     private val _tracks = MutableStateFlow<List<Track>>(emptyList())
     val tracks: StateFlow<List<Track>> = _tracks.asStateFlow()
