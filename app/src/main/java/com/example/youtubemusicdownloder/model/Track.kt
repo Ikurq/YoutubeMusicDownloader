@@ -16,3 +16,12 @@ data class Track(
     val isFavorite: Boolean = false,
     val addedAt: Long = System.currentTimeMillis()
 )
+
+data class DuplicateDownloadInfo(
+    val url: String,
+    val originalTitle: String,
+    val customTitle: String? = null,
+    val existingTrack: Track,
+    val suggestedNewTitle: String
+)
+

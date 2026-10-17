@@ -58,6 +58,7 @@ import com.example.youtubemusicdownloder.model.Track
 import com.example.youtubemusicdownloder.ui.MusicViewModel
 import com.example.youtubemusicdownloder.ui.components.AddTrackToPlaylistDialog
 import com.example.youtubemusicdownloder.ui.components.DownloadQueueSheet
+import com.example.youtubemusicdownloder.ui.components.DuplicateFileDialog
 import com.example.youtubemusicdownloder.ui.components.LoginWebViewDialog
 import com.example.youtubemusicdownloder.ui.components.MiniPlayer
 import com.example.youtubemusicdownloder.ui.components.UpdateDialog
@@ -137,6 +138,7 @@ fun MainScreen(
     val durationMs by viewModel.durationMs.collectAsState()
     val repeatMode by viewModel.repeatMode.collectAsState()
     val isShuffle by viewModel.isShuffle.collectAsState()
+    val duplicateDownloadInfo by viewModel.duplicateDownloadInfo.collectAsState()
     val playbackSpeed by viewModel.playbackSpeed.collectAsState()
     val sleepTimerMinutes by viewModel.sleepTimerMinutes.collectAsState()
     val sleepTimerRemainingSeconds by viewModel.sleepTimerRemainingSeconds.collectAsState()
@@ -277,7 +279,7 @@ fun MainScreen(
                         onSaveApiKey = { viewModel.saveApiKey(it) },
                         onSaveAntigravityServerUrl = { viewModel.saveAntigravityServerUrl(it) },
                         onAddTrack = { url, title ->
-                            viewModel.addToDownloadQueue(url, title ?: "YouTube Track", title)
+                            viewModel.requestDownloadTrack(url, title ?: "YouTube Track", title)
                         },
                         matchedChannels = matchedChannels,
                         selectedChannel = selectedChannel,
@@ -387,7 +389,7 @@ fun MainScreen(
             onToggleFavorite = { viewModel.toggleFavorite(currentTrackId) },
             onSpeedChange = { viewModel.setPlaybackSpeed(it) },
             onSetSleepTimer = { viewModel.setSleepTimer(it) },
-            onAddRelatedTrack = { url, title -> viewModel.addToDownloadQueue(url, title) },
+            onAddRelatedTrack = { url, title -> viewModel.requestDownloadTrack(url, title) },
             onCloseClick = { showPlayerSheet = false }
         )
     }
@@ -402,6 +404,16 @@ fun MainScreen(
             onClearCompleted = { viewModel.clearCompletedQueue() },
             onClearAll = { viewModel.clearAllQueue() },
             onDismiss = { showQueueSheet = false }
+        )
+    }
+
+    // Duplicate File Confirmation Dialog
+    duplicateDownloadInfo?.let { info ->
+        DuplicateFileDialog(
+            info = info,
+            onKeepBoth = { viewModel.confirmKeepBothDownload(info) },
+            onOverwrite = { viewModel.confirmOverwriteDownload(info) },
+            onCancel = { viewModel.cancelDuplicateDownload() }
         )
     }
 

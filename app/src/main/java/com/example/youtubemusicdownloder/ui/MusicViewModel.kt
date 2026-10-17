@@ -20,6 +20,7 @@ import com.example.youtubemusicdownloder.data.YoutubeDownloader
 import com.example.youtubemusicdownloder.data.YoutubeExtractor
 import com.example.youtubemusicdownloder.data.YoutubeSearchService
 import com.example.youtubemusicdownloder.media.MusicPlayerManager
+import com.example.youtubemusicdownloder.model.DuplicateDownloadInfo
 import com.example.youtubemusicdownloder.model.Playlist
 import com.example.youtubemusicdownloder.model.RepeatMode
 import com.example.youtubemusicdownloder.model.Track
@@ -135,6 +136,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private val _statusMessage = MutableStateFlow<String?>(null)
     val statusMessage: StateFlow<String?> = _statusMessage.asStateFlow()
 
+    private val _duplicateDownloadInfo = MutableStateFlow<DuplicateDownloadInfo?>(null)
+    val duplicateDownloadInfo: StateFlow<DuplicateDownloadInfo?> = _duplicateDownloadInfo.asStateFlow()
+
     init {
         loadData()
         checkForUpdates(silent = true)
@@ -156,6 +160,62 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         _playlists.value = repository.loadPlaylists()
         _apiKey.value = repository.getApiKey()
         _antigravityServerUrl.value = repository.getAntigravityServerUrl()
+    }
+
+    fun findDuplicateTrack(title: String): Track? {
+        val trimmed = title.trim()
+        if (trimmed.isBlank()) return null
+        return _tracks.value.find {
+            it.title.trim().equals(trimmed, ignoreCase = true)
+        }
+    }
+
+    fun generateUniqueTitle(baseTitle: String): String {
+        val cleanBase = baseTitle.replace(Regex("""\s*\(\d+\)$"""), "").trim()
+        val existingTitles = _tracks.value.map { it.title.trim().lowercase() }.toSet()
+
+        var counter = 1
+        while (true) {
+            val candidate = "$cleanBase ($counter)"
+            if (!existingTitles.contains(candidate.lowercase())) {
+                return candidate
+            }
+            counter++
+        }
+    }
+
+    fun requestDownloadTrack(url: String, title: String, customTitle: String? = null) {
+        val effectiveTitle = customTitle?.trim()?.ifBlank { null } ?: title.trim()
+        val duplicate = findDuplicateTrack(effectiveTitle)
+        if (duplicate != null) {
+            val suggested = generateUniqueTitle(effectiveTitle)
+            _duplicateDownloadInfo.value = DuplicateDownloadInfo(
+                url = url,
+                originalTitle = effectiveTitle,
+                customTitle = customTitle,
+                existingTrack = duplicate,
+                suggestedNewTitle = suggested
+            )
+        } else {
+            addToDownloadQueue(url, title, customTitle)
+        }
+    }
+
+    fun confirmOverwriteDownload(info: DuplicateDownloadInfo) {
+        _duplicateDownloadInfo.value = null
+        deleteTrack(info.existingTrack.id)
+        addToDownloadQueue(info.url, info.originalTitle, info.customTitle)
+        _statusMessage.value = "「${info.originalTitle}」を上書きダウンロードします"
+    }
+
+    fun confirmKeepBothDownload(info: DuplicateDownloadInfo) {
+        _duplicateDownloadInfo.value = null
+        addToDownloadQueue(info.url, info.suggestedNewTitle, info.suggestedNewTitle)
+        _statusMessage.value = "「${info.suggestedNewTitle}」としてダウンロードを開始しました"
+    }
+
+    fun cancelDuplicateDownload() {
+        _duplicateDownloadInfo.value = null
     }
 
     fun addToDownloadQueue(url: String, title: String, customTitle: String? = null) {
