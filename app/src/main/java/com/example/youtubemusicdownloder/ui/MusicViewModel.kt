@@ -11,11 +11,13 @@ import com.example.youtubemusicdownloder.data.DownloadQueueManager
 import com.example.youtubemusicdownloder.data.GeminiMetadataCleaner
 import com.example.youtubemusicdownloder.data.LocalAudioImporter
 import com.example.youtubemusicdownloder.data.MusicRepository
+import com.example.youtubemusicdownloder.data.PlaylistInfo
 import com.example.youtubemusicdownloder.data.ReleaseInfo
 import com.example.youtubemusicdownloder.data.SearchResultItem
 import com.example.youtubemusicdownloder.data.SearchFilter
 import com.example.youtubemusicdownloder.data.UpdateManager
 import com.example.youtubemusicdownloder.data.YoutubeDownloader
+import com.example.youtubemusicdownloder.data.YoutubeExtractor
 import com.example.youtubemusicdownloder.data.YoutubeSearchService
 import com.example.youtubemusicdownloder.media.MusicPlayerManager
 import com.example.youtubemusicdownloder.model.Playlist

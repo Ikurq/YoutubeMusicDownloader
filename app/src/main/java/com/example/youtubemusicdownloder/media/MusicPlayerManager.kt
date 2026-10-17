@@ -274,7 +274,6 @@ class MusicPlayerManager(private val context: Context) {
         if (_currentTrack.value?.id == track.id) {
             _currentTrack.value = track
             currentPlaylist = currentPlaylist.map { if (it.id == track.id) track else it }
-            shuffledPlaylist = shuffledPlaylist.map { if (it.id == track.id) track else it }
 
             MusicPlaybackService.startService(
                 context = context,

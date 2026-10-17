@@ -261,8 +261,10 @@ fun UrlSearchScreen(
                 items(filteredPlaylistTracks, key = { it.videoId }) { item ->
                     SearchResultRow(
                         item = item,
-                        isDownloading = isDownloading,
-                        onAddTrack = onAddTrack
+                        onDownloadClick = {
+                            onAddTrack(it.url, it.title)
+                        },
+                        onChannelClick = onOpenChannel
                     )
                 }
             }
