@@ -9,11 +9,17 @@ import android.os.Environment
 import android.provider.MediaStore
 import com.example.youtubemusicdownloder.model.Track
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileOutputStream
+import java.io.RandomAccessFile
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.atomic.AtomicLong
 
 object AudioDownloader {
 
@@ -159,45 +165,74 @@ object AudioDownloader {
                     YoutubeStreamResolver.fetchDirectAudioUrl(videoId, customServerUrl, effectiveCookie) ?: streamUrl
                 } else streamUrl
 
-                val conn = URL(activeUrl).openConnection() as HttpURLConnection
-                conn.instanceFollowRedirects = true
-                conn.connectTimeout = 15000
-                conn.readTimeout = 30000
-                conn.requestMethod = "GET"
-                conn.setRequestProperty(
+                // Probe Content-Length & Range capability
+                val probeConn = URL(activeUrl).openConnection() as HttpURLConnection
+                probeConn.instanceFollowRedirects = true
+                probeConn.connectTimeout = 15000
+                probeConn.readTimeout = 20000
+                probeConn.requestMethod = "GET"
+                probeConn.setRequestProperty(
                     "User-Agent",
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
                 )
-                conn.setRequestProperty("Accept", "*/*")
-                conn.setRequestProperty("Referer", "https://www.youtube.com/")
+                probeConn.setRequestProperty("Accept", "*/*")
+                probeConn.setRequestProperty("Referer", "https://www.youtube.com/")
+                probeConn.setRequestProperty("Range", "bytes=0-1023")
 
-                val responseCode = conn.responseCode
-                if (responseCode in 200..299) {
-                    val totalLength = conn.contentLengthLong.coerceAtLeast(1L)
+                val probeCode = probeConn.responseCode
+                if (probeCode == 206) {
+                    val contentRange = probeConn.getHeaderField("Content-Range")
+                    val totalLength = contentRange?.substringAfterLast('/')?.trim()?.toLongOrNull() ?: probeConn.contentLengthLong
+                    probeConn.disconnect()
 
-                    conn.inputStream.use { input ->
-                        FileOutputStream(outputFile).use { output ->
-                            val buffer = ByteArray(64 * 1024)
-                            var bytesRead: Int
-                            var totalRead = 0L
+                    if (totalLength >= 512 * 1024) {
+                        // Multi-part concurrent download (4 chunks parallel) to bypass YouTube bandwidth throttling
+                        val multiSuccess = downloadMultiPart(activeUrl, outputFile, totalLength, chunkCount = 4, onProgress)
+                        if (multiSuccess) {
+                            success = true
+                        } else {
+                            if (outputFile.exists()) outputFile.delete()
+                            // Fallback to single stream if multi-part encountered network failure
+                            val directConn = URL(activeUrl).openConnection() as HttpURLConnection
+                            directConn.instanceFollowRedirects = true
+                            directConn.connectTimeout = 15000
+                            directConn.readTimeout = 30000
+                            directConn.requestMethod = "GET"
+                            directConn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                            directConn.setRequestProperty("Accept", "*/*")
+                            directConn.setRequestProperty("Referer", "https://www.youtube.com/")
 
-                            while (input.read(buffer).also { bytesRead = it } != -1) {
-                                output.write(buffer, 0, bytesRead)
-                                totalRead += bytesRead
-                                val percent = ((totalRead * 100) / totalLength).toInt().coerceIn(0, 100)
-                                onProgress?.invoke(percent, totalRead, totalLength)
+                            if (directConn.responseCode in 200..299) {
+                                success = downloadSingleStream(directConn, outputFile, totalLength, onProgress)
                             }
                         }
+                    } else {
+                        // Small file: single connection
+                        val directConn = URL(activeUrl).openConnection() as HttpURLConnection
+                        directConn.instanceFollowRedirects = true
+                        directConn.connectTimeout = 15000
+                        directConn.readTimeout = 30000
+                        directConn.requestMethod = "GET"
+                        directConn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                        directConn.setRequestProperty("Accept", "*/*")
+                        directConn.setRequestProperty("Referer", "https://www.youtube.com/")
+
+                        if (directConn.responseCode in 200..299) {
+                            success = downloadSingleStream(directConn, outputFile, totalLength, onProgress)
+                        }
                     }
-                    success = true
-                } else if (responseCode == 403 || responseCode == 410) {
+                } else if (probeCode in 200..299) {
+                    // Server does not support Range (returned full 200 OK), stream directly
+                    val totalLength = probeConn.contentLengthLong.coerceAtLeast(1L)
+                    success = downloadSingleStream(probeConn, outputFile, totalLength, onProgress)
+                } else if (probeCode == 403 || probeCode == 410) {
                     if (videoId != null) {
                         val freshUrl = YoutubeStreamResolver.fetchDirectAudioUrl(videoId, customServerUrl, effectiveCookie)
                         if (freshUrl != null) streamUrl = freshUrl
                     }
-                    lastError = IllegalStateException("HTTP Error $responseCode (トークン期限切れ)")
+                    lastError = IllegalStateException("HTTP Error $probeCode (トークン期限切れ)")
                 } else {
-                    lastError = IllegalStateException("HTTP Error $responseCode")
+                    lastError = IllegalStateException("HTTP Error $probeCode")
                 }
             } catch (e: Exception) {
                 lastError = e
@@ -212,5 +247,118 @@ object AudioDownloader {
 
         copyToPublicMusicDir(context, outputFile, track.title, track.artist, "$cleanTitle.m4a")
         outputFile
+    }
+
+    private suspend fun downloadMultiPart(
+        activeUrl: String,
+        outputFile: File,
+        totalLength: Long,
+        chunkCount: Int = 4,
+        onProgress: ((percent: Int, downloadedBytes: Long, totalBytes: Long) -> Unit)?
+    ): Boolean = coroutineScope {
+        try {
+            RandomAccessFile(outputFile, "rw").use { raf ->
+                raf.setLength(totalLength)
+            }
+
+            val totalDownloaded = AtomicLong(0L)
+            var lastReportTime = 0L
+            val chunkSize = totalLength / chunkCount
+
+            val deferreds = (0 until chunkCount).map { i ->
+                val startByte = i * chunkSize
+                val endByte = if (i == chunkCount - 1) totalLength - 1 else (i + 1) * chunkSize - 1
+
+                async(Dispatchers.IO) {
+                    var conn: HttpURLConnection? = null
+                    try {
+                        conn = URL(activeUrl).openConnection() as HttpURLConnection
+                        conn.instanceFollowRedirects = true
+                        conn.connectTimeout = 15000
+                        conn.readTimeout = 30000
+                        conn.requestMethod = "GET"
+                        conn.setRequestProperty(
+                            "User-Agent",
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                        )
+                        conn.setRequestProperty("Accept", "*/*")
+                        conn.setRequestProperty("Referer", "https://www.youtube.com/")
+                        conn.setRequestProperty("Range", "bytes=$startByte-$endByte")
+                        conn.setRequestProperty("Connection", "keep-alive")
+
+                        val code = conn.responseCode
+                        if (code != 206 && code != 200) {
+                            return@async false
+                        }
+
+                        RandomAccessFile(outputFile, "rw").use { raf ->
+                            raf.seek(startByte)
+                            BufferedInputStream(conn.inputStream, 128 * 1024).use { input ->
+                                val buffer = ByteArray(64 * 1024)
+                                var bytesRead: Int
+                                while (input.read(buffer).also { bytesRead = it } != -1) {
+                                    raf.write(buffer, 0, bytesRead)
+                                    val current = totalDownloaded.addAndGet(bytesRead.toLong())
+
+                                    val now = System.currentTimeMillis()
+                                    if (now - lastReportTime >= 100 || current >= totalLength) {
+                                        lastReportTime = now
+                                        val percent = ((current * 100) / totalLength).toInt().coerceIn(0, 100)
+                                        onProgress?.invoke(percent, current, totalLength)
+                                    }
+                                }
+                            }
+                        }
+                        true
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        false
+                    } finally {
+                        conn?.disconnect()
+                    }
+                }
+            }
+
+            val results = deferreds.awaitAll()
+            results.all { it } && outputFile.exists() && outputFile.length() == totalLength
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
+    private fun downloadSingleStream(
+        conn: HttpURLConnection,
+        outputFile: File,
+        totalLength: Long,
+        onProgress: ((percent: Int, downloadedBytes: Long, totalBytes: Long) -> Unit)?
+    ): Boolean {
+        return try {
+            val effLength = if (totalLength > 0) totalLength else conn.contentLengthLong.coerceAtLeast(1L)
+            BufferedInputStream(conn.inputStream, 128 * 1024).use { input ->
+                FileOutputStream(outputFile).use { output ->
+                    val buffer = ByteArray(64 * 1024)
+                    var bytesRead: Int
+                    var totalRead = 0L
+                    var lastReportTime = 0L
+
+                    while (input.read(buffer).also { bytesRead = it } != -1) {
+                        output.write(buffer, 0, bytesRead)
+                        totalRead += bytesRead
+
+                        val now = System.currentTimeMillis()
+                        if (now - lastReportTime >= 100 || totalRead >= effLength) {
+                            lastReportTime = now
+                            val percent = ((totalRead * 100) / effLength).toInt().coerceIn(0, 100)
+                            onProgress?.invoke(percent, totalRead, effLength)
+                        }
+                    }
+                }
+            }
+            outputFile.exists() && outputFile.length() > 0L
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
     }
 }
