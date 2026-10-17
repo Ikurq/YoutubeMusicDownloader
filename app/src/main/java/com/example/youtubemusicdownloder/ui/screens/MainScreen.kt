@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.youtubemusicdownloder.data.DownloadStatus
 import com.example.youtubemusicdownloder.data.SearchFilter
 import com.example.youtubemusicdownloder.model.Track
 import com.example.youtubemusicdownloder.ui.MusicViewModel
@@ -113,6 +114,9 @@ fun MainScreen(
 
     val downloadQueue by viewModel.downloadQueue.collectAsState()
     val isQueueProcessing by viewModel.isQueueProcessing.collectAsState()
+    val activeQueueCount = remember(downloadQueue) {
+        downloadQueue.count { it.status != DownloadStatus.COMPLETED }
+    }
 
     val availableUpdate by viewModel.availableUpdate.collectAsState()
     val isCheckingUpdate by viewModel.isCheckingUpdate.collectAsState()
@@ -156,16 +160,16 @@ fun MainScreen(
                                 Icon(
                                     imageVector = Icons.Default.Download,
                                     contentDescription = "DLキュー",
-                                    tint = if (downloadQueue.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    tint = if (activeQueueCount > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
-                                if (downloadQueue.isNotEmpty()) {
+                                if (activeQueueCount > 0) {
                                     Spacer(modifier = Modifier.width(2.dp))
                                     Surface(
                                         shape = RoundedCornerShape(8.dp),
                                         color = MaterialTheme.colorScheme.primary
                                     ) {
                                         Text(
-                                            text = "${downloadQueue.size}",
+                                            text = "$activeQueueCount",
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onPrimary,
                                             modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
