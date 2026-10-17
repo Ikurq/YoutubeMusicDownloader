@@ -12,8 +12,8 @@ android {
         applicationId = "com.example.youtubemusicdownloder"
         minSdk = 24
         targetSdk = 35
-        versionCode = 45
-        versionName = "3.9.4"
+        versionCode = 46
+        versionName = "3.9.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

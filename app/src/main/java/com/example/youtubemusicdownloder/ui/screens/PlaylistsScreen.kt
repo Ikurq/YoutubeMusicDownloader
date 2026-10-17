@@ -42,8 +42,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.youtubemusicdownloder.model.Playlist
+import com.example.youtubemusicdownloder.data.SearchResultItem
 import com.example.youtubemusicdownloder.model.Track
 import com.example.youtubemusicdownloder.ui.components.CreatePlaylistDialog
+import com.example.youtubemusicdownloder.ui.components.EditTrackMetadataDialog
 import com.example.youtubemusicdownloder.ui.components.PlaylistItem
 import com.example.youtubemusicdownloder.ui.components.TrackItem
 
@@ -60,11 +62,14 @@ fun PlaylistsScreen(
     onPlayPlaylist: (playlist: Playlist, shuffle: Boolean) -> Unit,
     onPlayTrack: (track: Track, playlistTracks: List<Track>) -> Unit,
     onRemoveFromPlaylist: (playlistId: String, trackId: String) -> Unit,
-    onAddToPlaylistClick: (track: Track) -> Unit
+    onAddToPlaylistClick: (track: Track) -> Unit,
+    onUpdateTrackMetadata: ((trackId: String, title: String, artist: String, album: String, thumbnailUrl: String?) -> Unit)? = null,
+    onSearchCandidates: (suspend (query: String) -> List<SearchResultItem>)? = null
 ) {
     var selectedPlaylistId by rememberSaveable { mutableStateOf<String?>(null) }
     var showCreateDialog by remember { mutableStateOf(false) }
     var playlistToDelete by remember { mutableStateOf<Playlist?>(null) }
+    var trackToEdit by remember { mutableStateOf<Track?>(null) }
 
     val currentSelected = playlists.find { it.id == selectedPlaylistId }
 
@@ -188,6 +193,7 @@ fun PlaylistsScreen(
                                     isDownloading = downloadingTrackIds.contains(track.id),
                                     onTrackClick = { onPlayTrack(track, playlistTracks) },
                                     onAddToPlaylistClick = { onAddToPlaylistClick(track) },
+                                    onEditClick = { trackToEdit = track },
                                     onDeleteClick = { onRemoveFromPlaylist(currentSelected.id, track.id) }
                                 )
                             }
@@ -288,6 +294,20 @@ fun PlaylistsScreen(
                     Text("キャンセル")
                 }
             }
+        )
+    }
+
+    trackToEdit?.let { track ->
+        EditTrackMetadataDialog(
+            track = track,
+            onSearchCandidates = { query ->
+                onSearchCandidates?.invoke(query) ?: emptyList()
+            },
+            onSave = { newTitle, newArtist, newAlbum, newThumb ->
+                onUpdateTrackMetadata?.invoke(track.id, newTitle, newArtist, newAlbum, newThumb)
+                trackToEdit = null
+            },
+            onDismiss = { trackToEdit = null }
         )
     }
 }

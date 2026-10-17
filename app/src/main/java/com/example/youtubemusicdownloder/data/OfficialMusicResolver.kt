@@ -54,7 +54,16 @@ object OfficialMusicResolver {
                     val artwork100 = item.optString("artworkUrl100", "")
                     val artwork600 = artwork100.replace("100x100bb", "600x600bb")
 
-                    if (officialTitle.isNotBlank()) {
+                    // Verify title similarity to prevent completely unrelated matches (e.g. unrelated album matching)
+                    val normOriginal = cleaned.songTitle.replace(Regex("[^a-zA-Z0-9\\p{IsHan}\\p{IsHiragana}\\p{IsKatakana}]"), "").lowercase()
+                    val normOfficial = officialTitle.replace(Regex("[^a-zA-Z0-9\\p{IsHan}\\p{IsHiragana}\\p{IsKatakana}]"), "").lowercase()
+                    val isFuzzyMatch = normOriginal.isNotBlank() && (
+                        normOfficial.contains(normOriginal) ||
+                        normOriginal.contains(normOfficial) ||
+                        (normOriginal.length >= 3 && normOfficial.length >= 3 && normOriginal.take(4) == normOfficial.take(4))
+                    )
+
+                    if (officialTitle.isNotBlank() && isFuzzyMatch) {
                         return@withContext OfficialTrackMetadata(
                             songTitle = officialTitle,
                             unitArtist = if (officialArtist.contains("YouTube")) cleaned.unitArtist else officialArtist,

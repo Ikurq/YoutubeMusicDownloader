@@ -270,6 +270,25 @@ class MusicPlayerManager(private val context: Context) {
         }
     }
 
+    fun updateCurrentTrackMetadata(track: Track) {
+        if (_currentTrack.value?.id == track.id) {
+            _currentTrack.value = track
+            currentPlaylist = currentPlaylist.map { if (it.id == track.id) track else it }
+            shuffledPlaylist = shuffledPlaylist.map { if (it.id == track.id) track else it }
+
+            MusicPlaybackService.startService(
+                context = context,
+                title = track.title,
+                artist = track.artist,
+                album = track.album,
+                isPlaying = _isPlaying.value,
+                positionMs = _currentPositionMs.value,
+                durationMs = _durationMs.value,
+                artworkUrl = track.thumbnailUrl
+            )
+        }
+    }
+
     private fun applyPlaybackSpeedToPlayer(player: MediaPlayer, speed: Float) {
         try {
             val params = player.playbackParams ?: PlaybackParams()

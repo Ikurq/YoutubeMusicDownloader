@@ -524,6 +524,45 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         _statusMessage.value = if (isNowFavorite) "お気に入りに追加しました" else "お気に入りを解除しました"
     }
 
+    fun updateTrackMetadata(
+        trackId: String,
+        newTitle: String,
+        newArtist: String,
+        newAlbum: String,
+        newThumbnailUrl: String? = null
+    ) {
+        val updated = _tracks.value.map { track ->
+            if (track.id == trackId) {
+                track.copy(
+                    title = newTitle.trim().ifBlank { track.title },
+                    artist = newArtist.trim().ifBlank { "不明なアーティスト" },
+                    album = newAlbum.trim().ifBlank { "Single" },
+                    thumbnailUrl = if (!newThumbnailUrl.isNullOrBlank()) newThumbnailUrl.trim() else track.thumbnailUrl
+                )
+            } else track
+        }
+        _tracks.value = updated
+        repository.saveTracks(updated)
+
+        val updatedCurrent = updated.find { it.id == trackId }
+        if (updatedCurrent != null && currentTrack.value?.id == trackId) {
+            playerManager.updateCurrentTrackMetadata(updatedCurrent)
+        }
+        _statusMessage.value = "楽曲情報を更新しました"
+    }
+
+    suspend fun searchMetadataCandidates(query: String): List<SearchResultItem> {
+        val trimmed = query.trim()
+        if (trimmed.isBlank()) return emptyList()
+        return try {
+            val searchData = YoutubeSearchService.search(trimmed, _apiKey.value, SearchFilter.ALL)
+            searchData.videos
+        } catch (e: Exception) {
+            e.printStackTrace()
+            emptyList()
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
         playerManager.releasePlayer()

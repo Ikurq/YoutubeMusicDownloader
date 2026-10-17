@@ -43,7 +43,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.youtubemusicdownloder.data.SearchResultItem
 import com.example.youtubemusicdownloder.model.Track
+import com.example.youtubemusicdownloder.ui.components.EditTrackMetadataDialog
 import com.example.youtubemusicdownloder.ui.components.TrackItem
 
 @Composable
@@ -58,11 +60,14 @@ fun LibraryScreen(
     onDeleteClick: (trackId: String) -> Unit,
     onShuffleAllClick: (tracks: List<Track>) -> Unit,
     onImportLocalFiles: (uris: List<Uri>) -> Unit,
-    onToggleFavorite: (trackId: String) -> Unit
+    onToggleFavorite: (trackId: String) -> Unit,
+    onUpdateTrackMetadata: ((trackId: String, title: String, artist: String, album: String, thumbnailUrl: String?) -> Unit)? = null,
+    onSearchCandidates: (suspend (query: String) -> List<SearchResultItem>)? = null
 ) {
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var showOnlyFavorites by rememberSaveable { mutableStateOf(false) }
     var trackToDelete by remember { mutableStateOf<Track?>(null) }
+    var trackToEdit by remember { mutableStateOf<Track?>(null) }
 
     val audioPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetMultipleContents()
@@ -231,11 +236,26 @@ fun LibraryScreen(
                         onDownloadClick = if (!track.isDownloaded) {
                             { onDownloadClick(track) }
                         } else null,
+                        onEditClick = { trackToEdit = track },
                         onDeleteClick = { trackToDelete = track }
                     )
                 }
             }
         }
+    }
+
+    trackToEdit?.let { track ->
+        EditTrackMetadataDialog(
+            track = track,
+            onSearchCandidates = { query ->
+                onSearchCandidates?.invoke(query) ?: emptyList()
+            },
+            onSave = { newTitle, newArtist, newAlbum, newThumb ->
+                onUpdateTrackMetadata?.invoke(track.id, newTitle, newArtist, newAlbum, newThumb)
+                trackToEdit = null
+            },
+            onDismiss = { trackToEdit = null }
+        )
     }
 
     trackToDelete?.let { track ->

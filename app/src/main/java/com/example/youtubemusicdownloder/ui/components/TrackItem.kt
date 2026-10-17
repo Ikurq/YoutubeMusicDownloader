@@ -12,6 +12,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MoreVert
@@ -52,6 +53,7 @@ fun TrackItem(
     onToggleFavorite: (() -> Unit)? = null,
     onAddToPlaylistClick: (() -> Unit)? = null,
     onDownloadClick: (() -> Unit)? = null,
+    onEditClick: (() -> Unit)? = null,
     onDeleteClick: (() -> Unit)? = null
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -206,6 +208,22 @@ fun TrackItem(
                             onClick = {
                                 showMenu = false
                                 onAddToPlaylistClick()
+                            }
+                        )
+                    }
+
+                    if (onEditClick != null) {
+                        DropdownMenuItem(
+                            text = { Text("楽曲情報を編集・再検索") },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.Edit,
+                                    contentDescription = null
+                                )
+                            },
+                            onClick = {
+                                showMenu = false
+                                onEditClick()
                             }
                         )
                     }

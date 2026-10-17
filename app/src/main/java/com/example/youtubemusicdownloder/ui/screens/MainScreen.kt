@@ -304,7 +304,13 @@ fun MainScreen(
                         onRemoveFromPlaylist = { playlistId, trackId ->
                             viewModel.removeTrackFromPlaylist(playlistId, trackId)
                         },
-                        onAddToPlaylistClick = { trackToAddToPlaylist = it }
+                        onAddToPlaylistClick = { trackToAddToPlaylist = it },
+                        onUpdateTrackMetadata = { trackId, title, artist, album, thumbUrl ->
+                            viewModel.updateTrackMetadata(trackId, title, artist, album, thumbUrl)
+                        },
+                        onSearchCandidates = { query ->
+                            viewModel.searchMetadataCandidates(query)
+                        }
                     )
                     2 -> LibraryScreen(
                         tracks = tracks,
@@ -327,6 +333,12 @@ fun MainScreen(
                         },
                         onToggleFavorite = { trackId ->
                             viewModel.toggleFavorite(trackId)
+                        },
+                        onUpdateTrackMetadata = { trackId, title, artist, album, thumbUrl ->
+                            viewModel.updateTrackMetadata(trackId, title, artist, album, thumbUrl)
+                        },
+                        onSearchCandidates = { query ->
+                            viewModel.searchMetadataCandidates(query)
                         }
                     )
                 }
