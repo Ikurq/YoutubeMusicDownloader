@@ -15,9 +15,11 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlaylistAdd
+import com.example.youtubemusicdownloder.data.FileUtils
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -57,6 +59,14 @@ fun TrackItem(
     onDeleteClick: (() -> Unit)? = null
 ) {
     var showMenu by remember { mutableStateOf(false) }
+    var showDetailsDialog by remember { mutableStateOf(false) }
+
+    val fileSizeBytes = remember(track.localFilePath) {
+        FileUtils.getTrackFileSizeBytes(track)
+    }
+    val fileSizeStr = remember(fileSizeBytes) {
+        if (fileSizeBytes > 0L) FileUtils.formatFileSize(fileSizeBytes) else null
+    }
 
     Card(
         modifier = Modifier
@@ -77,6 +87,13 @@ fun TrackItem(
                 title = track.title,
                 artist = track.artist,
                 onDismiss = { showArtworkPreview = false }
+            )
+        }
+
+        if (showDetailsDialog) {
+            TrackDetailsDialog(
+                track = track,
+                onDismiss = { showDetailsDialog = false }
             )
         }
 
@@ -129,13 +146,26 @@ fun TrackItem(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Text(
-                    text = "${track.artist}${if (track.album.isNotBlank()) " • ${track.album}" else ""}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "${track.artist}${if (track.album.isNotBlank()) " • ${track.album}" else ""}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    if (fileSizeStr != null) {
+                        Text(
+                            text = " • $fileSizeStr",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
             }
 
             if (isDownloading) {
@@ -211,6 +241,20 @@ fun TrackItem(
                             }
                         )
                     }
+
+                    DropdownMenuItem(
+                        text = { Text("詳細情報") },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Info,
+                                contentDescription = null
+                            )
+                        },
+                        onClick = {
+                            showMenu = false
+                            showDetailsDialog = true
+                        }
+                    )
 
                     if (onEditClick != null) {
                         DropdownMenuItem(

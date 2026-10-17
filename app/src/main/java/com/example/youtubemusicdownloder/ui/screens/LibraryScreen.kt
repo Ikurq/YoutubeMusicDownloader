@@ -39,6 +39,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import com.example.youtubemusicdownloder.data.FileUtils
 import com.example.youtubemusicdownloder.ui.components.DuplicateCleanerDialog
 import com.example.youtubemusicdownloder.ui.components.RecoverUnindexedTracksDialog
 import androidx.compose.runtime.Composable
@@ -115,6 +116,12 @@ fun LibraryScreen(
         }
     }
 
+    val totalSizeBytes = remember(tracks) { FileUtils.calculateTotalStorageSize(tracks) }
+    val formattedTotalSize = remember(totalSizeBytes) { FileUtils.formatFileSize(totalSizeBytes) }
+
+    val filteredSizeBytes = remember(filteredTracks) { FileUtils.calculateTotalStorageSize(filteredTracks) }
+    val formattedFilteredSize = remember(filteredSizeBytes) { FileUtils.formatFileSize(filteredSizeBytes) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -133,9 +140,14 @@ fun LibraryScreen(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "保存済み楽曲 & ローカルファイル",
+                    text = if (searchQuery.isNotBlank() || showOnlyFavorites) {
+                        "表示: ${filteredTracks.size}曲 ($formattedFilteredSize) • 全体容量: $formattedTotalSize"
+                    } else {
+                        "全体容量: $formattedTotalSize • 保存済み楽曲"
+                    },
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.Medium
                 )
             }
 

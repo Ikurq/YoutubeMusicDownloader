@@ -196,6 +196,35 @@ fun EditTrackMetadataDialog(
                             },
                             modifier = Modifier.fillMaxWidth()
                         )
+
+                        val fileSizeBytes = remember(track.localFilePath) {
+                            com.example.youtubemusicdownloder.data.FileUtils.getTrackFileSizeBytes(track)
+                        }
+                        if (fileSizeBytes > 0L) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "ファイル容量:",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = com.example.youtubemusicdownloder.data.FileUtils.formatFileSizeBytesExact(fileSizeBytes),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
                     }
                 } else {
                     // YouTube Re-search
