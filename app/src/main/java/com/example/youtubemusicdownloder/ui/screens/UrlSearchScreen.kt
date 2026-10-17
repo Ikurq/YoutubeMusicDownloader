@@ -93,6 +93,7 @@ fun UrlSearchScreen(
     matchedPlaylist: PlaylistInfo? = null,
     matchedPlaylists: List<PlaylistInfo> = emptyList(),
     selectedPlaylist: PlaylistInfo? = null,
+    isLoadingPlaylist: Boolean = false,
     onOpenPlaylist: (PlaylistInfo) -> Unit = {},
     onClosePlaylist: () -> Unit = {},
     onImportPlaylist: (PlaylistInfo, Boolean) -> Unit = { _, _ -> },
@@ -255,18 +256,51 @@ fun UrlSearchScreen(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(filteredPlaylistTracks, key = { it.videoId }) { item ->
-                    SearchResultRow(
-                        item = item,
-                        onDownloadClick = {
-                            onAddTrack(it.url, it.title)
-                        },
-                        onChannelClick = onOpenChannel
+            if (isLoadingPlaylist) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(modifier = Modifier.size(36.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "再生リストの楽曲を読み込み中...",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            } else if (filteredPlaylistTracks.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = if (playlistFilterQuery.isBlank()) "再生リストの楽曲を取得できませんでした"
+                        else "条件に一致する楽曲が見つかりませんでした",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(filteredPlaylistTracks, key = { it.videoId }) { item ->
+                        SearchResultRow(
+                            item = item,
+                            onDownloadClick = {
+                                onAddTrack(it.url, it.title)
+                            },
+                            onChannelClick = onOpenChannel
+                        )
+                    }
                 }
             }
         } else if (selectedChannel != null) {

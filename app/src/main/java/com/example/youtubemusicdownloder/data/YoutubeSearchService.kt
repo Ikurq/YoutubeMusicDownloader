@@ -347,17 +347,33 @@ object YoutubeSearchService {
                 var author = ""
                 var thumbnailUrl = ""
 
-                val tabs = json.optJSONObject("contents")
-                    ?.optJSONObject("twoColumnBrowseResultsRenderer")
-                    ?.optJSONArray("tabs")
-                val sectionList = tabs?.optJSONObject(0)
+                val twoColumn = json.optJSONObject("contents")?.optJSONObject("twoColumnBrowseResultsRenderer")
+                val tabs = twoColumn?.optJSONArray("tabs")
+                val tabSections = tabs?.optJSONObject(0)
                     ?.optJSONObject("tabRenderer")
                     ?.optJSONObject("content")
                     ?.optJSONObject("sectionListRenderer")
-                val sections = sectionList?.optJSONArray("contents")
+                    ?.optJSONArray("contents")
+
+                val secSections = twoColumn?.optJSONObject("secondaryContents")
+                    ?.optJSONObject("sectionListRenderer")
+                    ?.optJSONArray("contents")
+
+                // Combine section lists from both tabs and secondaryContents
+                val allSections = mutableListOf<JSONObject>()
+                if (tabSections != null) {
+                    for (i in 0 until tabSections.length()) {
+                        tabSections.optJSONObject(i)?.let { allSections.add(it) }
+                    }
+                }
+                if (secSections != null) {
+                    for (i in 0 until secSections.length()) {
+                        secSections.optJSONObject(i)?.let { allSections.add(it) }
+                    }
+                }
 
                 val headerObj = json.optJSONObject("header")?.optJSONObject("musicResponsiveHeaderRenderer")
-                    ?: sections?.optJSONObject(0)?.optJSONObject("musicResponsiveHeaderRenderer")
+                    ?: allSections.firstNotNullOfOrNull { it.optJSONObject("musicResponsiveHeaderRenderer") }
 
                 if (headerObj != null) {
                     title = parseRunsText(headerObj.optJSONObject("title"))
@@ -377,18 +393,15 @@ object YoutubeSearchService {
 
                 val videos = mutableListOf<SearchResultItem>()
 
-                if (sections != null) {
-                    for (i in 0 until sections.length()) {
-                        val sec = sections.getJSONObject(i)
-                        val shelf = sec.optJSONObject("musicPlaylistShelfRenderer")
-                            ?: sec.optJSONObject("musicShelfRenderer")
-                        val items = shelf?.optJSONArray("contents")
-                        if (items != null) {
-                            for (j in 0 until items.length()) {
-                                val itemObj = items.getJSONObject(j).optJSONObject("musicResponsiveListItemRenderer")
-                                if (itemObj != null) {
-                                    parseMusicResponsiveListItem(itemObj)?.let { videos.add(it) }
-                                }
+                for (sec in allSections) {
+                    val shelf = sec.optJSONObject("musicPlaylistShelfRenderer")
+                        ?: sec.optJSONObject("musicShelfRenderer")
+                    val items = shelf?.optJSONArray("contents")
+                    if (items != null) {
+                        for (j in 0 until items.length()) {
+                            val itemObj = items.getJSONObject(j).optJSONObject("musicResponsiveListItemRenderer")
+                            if (itemObj != null) {
+                                parseMusicResponsiveListItem(itemObj)?.let { videos.add(it) }
                             }
                         }
                     }
@@ -1270,24 +1283,91 @@ object YoutubeSearchService {
                             // Parse Lockup ViewModel (Playlist / Album)
                             val lockupVm = item.optJSONObject("lockupViewModel")
                             if (lockupVm != null) {
-                                val cId = lockupVm.optString("contentId", "")
+                                var cId = lockupVm.optString("contentId", "")
                                 val cType = lockupVm.optString("contentType", "")
+
+                                val watchEndpoint = lockupVm.optJSONObject("itemPlayback")
+                                    ?.optJSONObject("inlinePlayerData")
+                                    ?.optJSONObject("onSelect")
+                                    ?.optJSONObject("innertubeCommand")
+                                    ?.optJSONObject("watchEndpoint")
+                                    ?: lockupVm.optJSONObject("rendererContext")
+                                        ?.optJSONObject("commandContext")
+                                        ?.optJSONObject("onTap")
+                                        ?.optJSONObject("innertubeCommand")
+                                        ?.optJSONObject("watchEndpoint")
+
+                                if (cId.isBlank() && watchEndpoint != null) {
+                                    cId = watchEndpoint.optString("playlistId", "")
+                                }
+
                                 if (cId.startsWith("PL") || cId.startsWith("OLAK5uy_") || cType.contains("PLAYLIST", ignoreCase = true)) {
                                     val meta = lockupVm.optJSONObject("metadata")?.optJSONObject("lockupMetadataViewModel")
                                     val plTitle = meta?.optJSONObject("title")?.optString("content", "") ?: ""
                                     var plAuthor = ""
                                     val metaRows = meta?.optJSONObject("metadata")?.optJSONArray("metadataRows")
+                                        ?: meta?.optJSONObject("metadata")?.optJSONObject("contentMetadataViewModel")?.optJSONArray("metadataRows")
                                     if (metaRows != null && metaRows.length() > 0) {
-                                        val parts = metaRows.getJSONObject(0).optJSONArray("metadataParts")
-                                        if (parts != null && parts.length() > 0) {
-                                            plAuthor = parts.getJSONObject(0).optJSONObject("text")?.optString("content", "") ?: ""
+                                        for (rIdx in 0 until metaRows.length()) {
+                                            val parts = metaRows.getJSONObject(rIdx).optJSONArray("metadataParts")
+                                            if (parts != null && parts.length() > 0) {
+                                                val pText = parts.getJSONObject(0).optJSONObject("text")?.optString("content", "") ?: ""
+                                                if (pText.isNotBlank()) {
+                                                    plAuthor = pText
+                                                    break
+                                                }
+                                            }
                                         }
                                     }
-                                    val thumbUrl = lockupVm.optJSONObject("contentImage")
+
+                                    // Extract high-quality thumbnail
+                                    var thumbUrl = ""
+                                    val contentImage = lockupVm.optJSONObject("contentImage")
+                                    if (contentImage != null) {
+                                        // 1. collectionThumbnailViewModel (Standard YouTube search playlist format)
+                                        val collThumb = contentImage.optJSONObject("collectionThumbnailViewModel")
+                                        val primaryThumb = collThumb?.optJSONObject("primaryThumbnail")?.optJSONObject("thumbnailViewModel")
+                                        val sources = primaryThumb?.optJSONObject("image")?.optJSONArray("sources")
+                                        if (sources != null && sources.length() > 0) {
+                                            thumbUrl = sources.getJSONObject(sources.length() - 1).optString("url", "")
+                                        }
+
+                                        // 2. Direct thumbnailViewModel
+                                        if (thumbUrl.isBlank()) {
+                                            val directThumbs = contentImage.optJSONObject("thumbnailViewModel")?.optJSONArray("image")
+                                            if (directThumbs != null && directThumbs.length() > 0) {
+                                                thumbUrl = directThumbs.getJSONObject(directThumbs.length() - 1).optString("url", "")
+                                            }
+                                        }
+                                    }
+                                    // 3. Fallback to videoId from watchEndpoint
+                                    if (thumbUrl.isBlank() && watchEndpoint != null) {
+                                        val vId = watchEndpoint.optString("videoId", "")
+                                        if (vId.isNotBlank()) {
+                                            thumbUrl = "https://img.youtube.com/vi/$vId/hqdefault.jpg"
+                                        }
+                                    }
+
+                                    // Extract track count from overlays
+                                    var vCount = 0
+                                    val collThumb = contentImage?.optJSONObject("collectionThumbnailViewModel")
+                                    val overlays = collThumb?.optJSONObject("primaryThumbnail")
                                         ?.optJSONObject("thumbnailViewModel")
-                                        ?.optJSONArray("image")?.let { imgArr ->
-                                            if (imgArr.length() > 0) imgArr.getJSONObject(imgArr.length() - 1).optString("url", "") else ""
-                                        } ?: ""
+                                        ?.optJSONArray("overlays")
+                                    if (overlays != null && overlays.length() > 0) {
+                                        for (oIdx in 0 until overlays.length()) {
+                                            val overlay = overlays.getJSONObject(oIdx)
+                                            val badges = overlay.optJSONObject("thumbnailOverlayBadgeViewModel")?.optJSONArray("thumbnailBadges")
+                                            if (badges != null && badges.length() > 0) {
+                                                val bText = badges.getJSONObject(0).optJSONObject("thumbnailBadgeViewModel")?.optString("text", "") ?: ""
+                                                val num = Regex("""\d+""").find(bText)?.value?.toIntOrNull()
+                                                if (num != null && num > 0) {
+                                                    vCount = num
+                                                    break
+                                                }
+                                            }
+                                        }
+                                    }
 
                                     if (cId.isNotBlank() && plTitle.isNotBlank()) {
                                         playlists.add(
@@ -1296,7 +1376,7 @@ object YoutubeSearchService {
                                                 title = plTitle,
                                                 author = plAuthor.ifBlank { "YouTube" },
                                                 thumbnailUrl = thumbUrl,
-                                                trackCount = 0
+                                                trackCount = vCount
                                             )
                                         )
                                     }

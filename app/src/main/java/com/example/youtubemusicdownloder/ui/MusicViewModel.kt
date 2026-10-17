@@ -434,13 +434,24 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     fun importPlaylistToApp(playlistInfo: PlaylistInfo, downloadAll: Boolean = false) {
         viewModelScope.launch {
-            if (playlistInfo.tracks.isEmpty()) {
+            var targetPl = playlistInfo
+            if (targetPl.tracks.isEmpty() && targetPl.playlistId.isNotBlank()) {
+                _statusMessage.value = "プレイリスト「${targetPl.title}」の楽曲を取得中..."
+                val userCookie = if (userAccountManager.hasValidCookie()) userAccountManager.getCookie() else null
+                val fetched = YoutubeSearchService.fetchPlaylistDetails(targetPl.playlistId, cookie = userCookie, apiKey = _apiKey.value)
+                if (fetched != null && fetched.tracks.isNotEmpty()) {
+                    targetPl = fetched
+                } else {
+                    _statusMessage.value = "プレイリストに楽曲が見つかりませんでした"
+                    return@launch
+                }
+            } else if (targetPl.tracks.isEmpty()) {
                 _statusMessage.value = "プレイリストに楽曲がありません"
                 return@launch
             }
 
             // 1. Create or find target playlist in app
-            val plTitle = playlistInfo.title.trim().ifBlank { "インポートしたプレイリスト" }
+            val plTitle = targetPl.title.trim().ifBlank { "インポートしたプレイリスト" }
             val existingPl = _playlists.value.find { it.name.equals(plTitle, ignoreCase = true) }
             val targetPlaylist = existingPl ?: Playlist(name = plTitle)
             if (existingPl == null) {
@@ -451,7 +462,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             val currentTracks = _tracks.value.toMutableList()
             val newTrackIds = mutableListOf<String>()
 
-            for (item in playlistInfo.tracks) {
+            for (item in targetPl.tracks) {
                 var existingTrack = currentTracks.find { it.youtubeUrl == item.url || it.id == item.videoId }
                 if (existingTrack == null) {
                     existingTrack = Track(
@@ -483,10 +494,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
             // 4. Trigger download if requested
             if (downloadAll) {
-                addMultipleToDownloadQueue(playlistInfo.tracks.map { Pair(it.url, it.title) })
-                _statusMessage.value = "プレイリスト「$plTitle」（${playlistInfo.tracks.size}曲）を保存し、ダウンロードを開始しました"
+                addMultipleToDownloadQueue(targetPl.tracks.map { Pair(it.url, it.title) })
+                _statusMessage.value = "プレイリスト「$plTitle」（${targetPl.tracks.size}曲）を保存し、ダウンロードを開始しました"
             } else {
-                _statusMessage.value = "プレイリスト「$plTitle」（${playlistInfo.tracks.size}曲）をインポートしました"
+                _statusMessage.value = "プレイリスト「$plTitle」（${targetPl.tracks.size}曲）をインポートしました"
             }
         }
     }

@@ -102,6 +102,7 @@ fun MainScreen(
     val matchedPlaylist by viewModel.matchedPlaylist.collectAsState()
     val matchedPlaylists by viewModel.matchedPlaylists.collectAsState()
     val selectedPlaylistInfo by viewModel.selectedPlaylistInfo.collectAsState()
+    val isLoadingPlaylist by viewModel.isLoadingPlaylist.collectAsState()
     val relatedTracks by viewModel.relatedTracks.collectAsState()
     val isSearching by viewModel.isSearching.collectAsState()
     val searchFilter by viewModel.searchFilter.collectAsState()
@@ -287,6 +288,7 @@ fun MainScreen(
                         matchedPlaylist = matchedPlaylist,
                         matchedPlaylists = matchedPlaylists,
                         selectedPlaylist = selectedPlaylistInfo,
+                        isLoadingPlaylist = isLoadingPlaylist,
                         onOpenPlaylist = { viewModel.openPlaylist(it) },
                         onClosePlaylist = { viewModel.closePlaylist() },
                         onImportPlaylist = { pl, dlAll -> viewModel.importPlaylistToApp(pl, dlAll) },
