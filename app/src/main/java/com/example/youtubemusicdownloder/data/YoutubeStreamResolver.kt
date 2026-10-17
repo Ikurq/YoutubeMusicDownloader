@@ -11,10 +11,9 @@ object YoutubeStreamResolver {
 
     private val PRIMARY_INVIDIOUS_NODES = listOf(
         "https://invidious.f5.si",
-        "https://inv.nadeko.net",
-        "https://yt.artemislena.eu",
-        "https://invidious.nerdvpn.de",
-        "https://invidious.lunar.icu"
+        "https://invidious.projectsegfau.lt",
+        "https://yewtu.be",
+        "https://iv.melmac.space"
     )
 
     suspend fun fetchDirectAudioUrl(videoId: String, customServerUrl: String? = null): String? = withContext(Dispatchers.IO) {

@@ -90,16 +90,49 @@ object AudioDownloader {
     ): File = withContext(Dispatchers.IO) {
         val videoId = YoutubeExtractor.extractVideoId(track.youtubeUrl) ?: YoutubeExtractor.extractVideoId(track.audioUrl)
 
-        var streamUrl = if (videoId != null) {
-            YoutubeStreamResolver.fetchDirectAudioUrl(videoId, customServerUrl) ?: track.audioUrl
-        } else track.audioUrl
+        var streamUrl: String? = null
+        var lastResolverError: String? = null
 
-        if (streamUrl.isBlank() && videoId != null) {
-            streamUrl = YoutubeStreamResolver.fetchDirectAudioUrl(videoId, customServerUrl) ?: ""
+        // 1. Primary Attempt: Resolve stream from the track's original videoId
+        if (videoId != null) {
+            try {
+                streamUrl = YoutubeStreamResolver.fetchDirectAudioUrl(videoId, customServerUrl)
+            } catch (e: Exception) {
+                lastResolverError = e.message
+            }
         }
 
-        if (streamUrl.isBlank()) {
-            throw IllegalStateException("YouTube 音声ストリームの取得に失敗しました。動画ID: $videoId")
+        if (streamUrl.isNullOrBlank() && track.audioUrl.isNotBlank()) {
+            streamUrl = track.audioUrl
+        }
+
+        // 2. Intelligent Auto-Fallback: If primary stream is blocked (e.g. YouTube Topic Content ID restriction HTTP 500/403),
+        // automatically search for an alternative official MV or clean video upload of the same song
+        if (streamUrl.isNullOrBlank() && track.title.isNotBlank()) {
+            try {
+                val searchQuery = "${track.title} ${track.artist}".trim()
+                val candidateVideos = YoutubeSearchService.searchVideos(searchQuery, filter = SearchFilter.VIDEOS)
+                    .filter { it.videoId != videoId }
+
+                for (candidate in candidateVideos.take(4)) {
+                    try {
+                        val fallbackStream = YoutubeStreamResolver.fetchDirectAudioUrl(candidate.videoId, customServerUrl)
+                        if (!fallbackStream.isNullOrBlank()) {
+                            streamUrl = fallbackStream
+                            break
+                        }
+                    } catch (_: Exception) {
+                        // Continue trying next candidate
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        if (streamUrl.isNullOrBlank()) {
+            val errorReason = lastResolverError ?: "YouTube 音声ストリームの取得に失敗しました。動画ID: $videoId"
+            throw IllegalStateException(errorReason)
         }
 
         val primaryDir = getPrimaryStorageDir(context)
