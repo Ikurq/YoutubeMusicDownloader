@@ -161,9 +161,14 @@ object AudioDownloader {
         while (attempts < 3 && !success) {
             attempts++
             try {
-                val activeUrl = if (attempts > 1 && videoId != null) {
+                val candidateUrl = if (attempts > 1 && videoId != null) {
                     YoutubeStreamResolver.fetchDirectAudioUrl(videoId, customServerUrl, effectiveCookie) ?: streamUrl
                 } else streamUrl
+
+                if (candidateUrl.isNullOrBlank()) {
+                    continue
+                }
+                val activeUrl: String = candidateUrl
 
                 // Probe Content-Length & Range capability
                 val probeConn = URL(activeUrl).openConnection() as HttpURLConnection
@@ -262,7 +267,7 @@ object AudioDownloader {
             }
 
             val totalDownloaded = AtomicLong(0L)
-            var lastReportTime = 0L
+            val lastReportTime = AtomicLong(0L)
             val chunkSize = totalLength / chunkCount
 
             val deferreds = (0 until chunkCount).map { i ->
@@ -301,8 +306,8 @@ object AudioDownloader {
                                     val current = totalDownloaded.addAndGet(bytesRead.toLong())
 
                                     val now = System.currentTimeMillis()
-                                    if (now - lastReportTime >= 100 || current >= totalLength) {
-                                        lastReportTime = now
+                                    if (now - lastReportTime.get() >= 100 || current >= totalLength) {
+                                        lastReportTime.set(now)
                                         val percent = ((current * 100) / totalLength).toInt().coerceIn(0, 100)
                                         onProgress?.invoke(percent, current, totalLength)
                                     }
