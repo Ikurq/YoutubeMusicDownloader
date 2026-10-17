@@ -348,7 +348,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 if (searchData.matchedPlaylists.isNotEmpty()) {
                     val count = searchData.matchedPlaylists.size
                     val songMsg = if (searchData.videos.isNotEmpty()) "、楽曲${searchData.videos.size}件" else ""
-                    _statusMessage.value = "再生リスト${count}件$songMsgが見つかりました"
+                    _statusMessage.value = "再生リスト${count}件${songMsg}が見つかりました"
                 } else if (searchData.matchedPlaylist != null) {
                     val pl = searchData.matchedPlaylist
                     _statusMessage.value = "プレイリスト「${pl.title}」（${pl.tracks.size}曲）を取得しました"
