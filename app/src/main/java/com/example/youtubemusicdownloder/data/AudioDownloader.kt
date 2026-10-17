@@ -118,13 +118,16 @@ object AudioDownloader {
         // automatically search for an alternative official MV or clean video upload of the same song
         if (streamUrl.isNullOrBlank() && track.title.isNotBlank()) {
             try {
-                val searchQuery = "${track.title} ${track.artist}".trim()
-                val candidateVideos = YoutubeSearchService.searchVideos(searchQuery, filter = SearchFilter.VIDEOS)
+                var candidateVideos = YoutubeSearchService.searchVideos("${track.title} ${track.artist}".trim(), filter = SearchFilter.VIDEOS)
                     .filter { it.videoId != videoId }
+                if (candidateVideos.isEmpty()) {
+                    candidateVideos = YoutubeSearchService.searchVideos(track.title.trim(), filter = SearchFilter.VIDEOS)
+                        .filter { it.videoId != videoId }
+                }
 
                 for (candidate in candidateVideos.take(4)) {
                     try {
-                        val fallbackStream = YoutubeStreamResolver.fetchDirectAudioUrl(candidate.videoId, customServerUrl)
+                        val fallbackStream = YoutubeStreamResolver.fetchDirectAudioUrl(candidate.videoId, customServerUrl, effectiveCookie)
                         if (!fallbackStream.isNullOrBlank()) {
                             streamUrl = fallbackStream
                             break
