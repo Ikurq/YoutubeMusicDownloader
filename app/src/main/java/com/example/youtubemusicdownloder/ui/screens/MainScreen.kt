@@ -139,6 +139,8 @@ fun MainScreen(
     val repeatMode by viewModel.repeatMode.collectAsState()
     val isShuffle by viewModel.isShuffle.collectAsState()
     val duplicateDownloadInfo by viewModel.duplicateDownloadInfo.collectAsState()
+    val isScanningLocal by viewModel.isScanningLocal.collectAsState()
+    val unindexedTracks by viewModel.unindexedTracks.collectAsState()
     val playbackSpeed by viewModel.playbackSpeed.collectAsState()
     val sleepTimerMinutes by viewModel.sleepTimerMinutes.collectAsState()
     val sleepTimerRemainingSeconds by viewModel.sleepTimerRemainingSeconds.collectAsState()
@@ -356,6 +358,11 @@ fun MainScreen(
                         onDeleteMultipleTracks = { trackIds ->
                             viewModel.deleteMultipleTracks(trackIds)
                         },
+                        unindexedTracks = unindexedTracks,
+                        isScanningLocal = isScanningLocal,
+                        onScanLocalFiles = { viewModel.scanLocalFiles(context, silent = false) },
+                        onAddRecoveredTracks = { viewModel.addRecoveredTracks(it) },
+                        onDismissUnindexed = { viewModel.dismissUnindexedTracksDialog() },
                         onUpdateTrackMetadata = { trackId, title, artist, album, thumbUrl ->
                             viewModel.updateTrackMetadata(trackId, title, artist, album, thumbUrl)
                         },

@@ -10,6 +10,7 @@ import com.example.youtubemusicdownloder.data.DownloadQueueItem
 import com.example.youtubemusicdownloder.data.DownloadQueueManager
 import com.example.youtubemusicdownloder.data.GeminiMetadataCleaner
 import com.example.youtubemusicdownloder.data.LocalAudioImporter
+import com.example.youtubemusicdownloder.data.LocalStorageScanner
 import com.example.youtubemusicdownloder.data.MusicRepository
 import com.example.youtubemusicdownloder.data.PlaylistInfo
 import com.example.youtubemusicdownloder.data.ReleaseInfo
@@ -139,9 +140,16 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private val _duplicateDownloadInfo = MutableStateFlow<DuplicateDownloadInfo?>(null)
     val duplicateDownloadInfo: StateFlow<DuplicateDownloadInfo?> = _duplicateDownloadInfo.asStateFlow()
 
+    private val _isScanningLocal = MutableStateFlow(false)
+    val isScanningLocal: StateFlow<Boolean> = _isScanningLocal.asStateFlow()
+
+    private val _unindexedTracks = MutableStateFlow<List<Track>>(emptyList())
+    val unindexedTracks: StateFlow<List<Track>> = _unindexedTracks.asStateFlow()
+
     init {
         loadData()
         checkForUpdates(silent = true)
+        scanLocalFiles(getApplication(), silent = true)
 
         downloadQueueManager.onTrackDownloaded = { downloadedTrack ->
             val updated = (_tracks.value.filter { it.id != downloadedTrack.id }).toMutableList()
@@ -298,6 +306,47 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 _statusMessage.value = "ローカルファイルの読み込みに失敗しました"
             }
         }
+    }
+
+    fun scanLocalFiles(context: Context, silent: Boolean = false) {
+        viewModelScope.launch {
+            _isScanningLocal.value = true
+            if (!silent) {
+                _statusMessage.value = "端末内の音声ファイルをスキャン中..."
+            }
+            try {
+                val recovered = LocalStorageScanner.scanLocalAudioFiles(context, _tracks.value)
+                _unindexedTracks.value = recovered
+                if (!silent) {
+                    if (recovered.isNotEmpty()) {
+                        _statusMessage.value = "${recovered.size}件の未登録楽曲が見つかりました"
+                    } else {
+                        _statusMessage.value = "未登録のローカル楽曲は見つかりませんでした"
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                if (!silent) {
+                    _statusMessage.value = "ローカルスキャン中にエラーが発生しました"
+                }
+            } finally {
+                _isScanningLocal.value = false
+            }
+        }
+    }
+
+    fun addRecoveredTracks(tracksToAdd: List<Track>) {
+        if (tracksToAdd.isEmpty()) return
+        val currentList = _tracks.value.toMutableList()
+        currentList.addAll(0, tracksToAdd)
+        _tracks.value = currentList
+        repository.saveTracks(currentList)
+        _unindexedTracks.value = emptyList()
+        _statusMessage.value = "${tracksToAdd.size}件の楽曲をライブラリに復元・追加しました"
+    }
+
+    fun dismissUnindexedTracksDialog() {
+        _unindexedTracks.value = emptyList()
     }
 
     fun checkForUpdates(silent: Boolean = false) {
