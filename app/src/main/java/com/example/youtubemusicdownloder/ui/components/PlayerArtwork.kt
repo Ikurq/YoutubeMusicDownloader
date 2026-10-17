@@ -19,18 +19,39 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 
+import androidx.compose.foundation.clickable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+
 @Composable
 fun PlayerArtwork(
     thumbnailUrl: String,
     title: String,
+    artist: String? = null,
     modifier: Modifier = Modifier
 ) {
+    var showPreview by remember { mutableStateOf(false) }
+
+    if (showPreview && thumbnailUrl.isNotBlank()) {
+        ArtworkPreviewDialog(
+            thumbnailUrl = thumbnailUrl,
+            title = title,
+            artist = artist,
+            onDismiss = { showPreview = false }
+        )
+    }
+
     Box(
         modifier = modifier
             .fillMaxWidth(0.85f)
             .aspectRatio(1f)
             .clip(RoundedCornerShape(20.dp))
-            .background(MaterialTheme.colorScheme.secondaryContainer),
+            .background(MaterialTheme.colorScheme.secondaryContainer)
+            .clickable(enabled = thumbnailUrl.isNotBlank()) {
+                showPreview = true
+            },
         contentAlignment = Alignment.Center
     ) {
         if (thumbnailUrl.isNotBlank()) {

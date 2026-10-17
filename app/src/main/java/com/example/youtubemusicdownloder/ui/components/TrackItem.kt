@@ -67,6 +67,17 @@ fun TrackItem(
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
+        var showArtworkPreview by remember { mutableStateOf(false) }
+
+        if (showArtworkPreview) {
+            ArtworkPreviewDialog(
+                thumbnailUrl = track.thumbnailUrl,
+                title = track.title,
+                artist = track.artist,
+                onDismiss = { showArtworkPreview = false }
+            )
+        }
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -78,23 +89,28 @@ fun TrackItem(
                     model = track.thumbnailUrl,
                     contentDescription = track.title,
                     modifier = Modifier
-                        .size(52.dp)
-                        .clip(RoundedCornerShape(10.dp)),
+                        .size(64.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { showArtworkPreview = true },
                     contentScale = ContentScale.Crop
                 )
             } else {
                 Surface(
                     modifier = Modifier
-                        .size(52.dp)
-                        .clip(RoundedCornerShape(10.dp)),
+                        .size(64.dp)
+                        .clip(RoundedCornerShape(12.dp)),
                     color = MaterialTheme.colorScheme.secondaryContainer
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.MusicNote,
-                        contentDescription = null,
-                        modifier = Modifier.padding(12.dp),
-                        tint = MaterialTheme.colorScheme.onSecondaryContainer
-                    )
+                    androidx.compose.foundation.layout.Box(
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MusicNote,
+                            contentDescription = null,
+                            modifier = Modifier.size(28.dp),
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
                 }
             }
 

@@ -101,7 +101,8 @@ fun PlayerSheet(
                 // Artwork
                 PlayerArtwork(
                     thumbnailUrl = track.thumbnailUrl,
-                    title = track.title
+                    title = track.title,
+                    artist = track.artist
                 )
 
                 Spacer(modifier = Modifier.height(24.dp))
