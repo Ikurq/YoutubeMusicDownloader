@@ -23,16 +23,20 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import com.example.youtubemusicdownloder.ui.components.DuplicateCleanerDialog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -61,6 +65,7 @@ fun LibraryScreen(
     onShuffleAllClick: (tracks: List<Track>) -> Unit,
     onImportLocalFiles: (uris: List<Uri>) -> Unit,
     onToggleFavorite: (trackId: String) -> Unit,
+    onDeleteMultipleTracks: ((Set<String>) -> Unit)? = null,
     onUpdateTrackMetadata: ((trackId: String, title: String, artist: String, album: String, thumbnailUrl: String?) -> Unit)? = null,
     onSearchCandidates: (suspend (query: String) -> List<SearchResultItem>)? = null
 ) {
@@ -68,6 +73,7 @@ fun LibraryScreen(
     var showOnlyFavorites by rememberSaveable { mutableStateOf(false) }
     var trackToDelete by remember { mutableStateOf<Track?>(null) }
     var trackToEdit by remember { mutableStateOf<Track?>(null) }
+    var showDuplicateCleanerDialog by rememberSaveable { mutableStateOf(false) }
 
     val audioPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetMultipleContents()
@@ -78,6 +84,16 @@ fun LibraryScreen(
     }
 
     val favoriteCount = remember(tracks) { tracks.count { it.isFavorite } }
+
+    val duplicateGroups = remember(tracks) {
+        tracks.groupBy { track ->
+            track.title.trim()
+                .replace(Regex("""\s*\(\d+\)$"""), "")
+                .replace(Regex("""\s*\[\d+\]$"""), "")
+                .trim()
+                .lowercase()
+        }.filter { it.value.size > 1 && it.key.isNotBlank() }
+    }
 
     val filteredTracks = remember(tracks, searchQuery, showOnlyFavorites) {
         val base = if (showOnlyFavorites) tracks.filter { it.isFavorite } else tracks
@@ -120,6 +136,54 @@ fun LibraryScreen(
                 Icon(Icons.Default.FolderOpen, contentDescription = null)
                 Spacer(modifier = Modifier.width(6.dp))
                 Text("端末から追加", fontWeight = FontWeight.Bold)
+            }
+        }
+
+        // 重複楽曲の整理バナー（重複が存在する場合のみ表示）
+        if (duplicateGroups.isNotEmpty()) {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.85f),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "重複楽曲が検出されました",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        val dupCount = duplicateGroups.values.sumOf { it.size - 1 }
+                        Text(
+                            text = "${duplicateGroups.size} 組 (${dupCount} 曲の重複) を整理できます",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = { showDuplicateCleanerDialog = true },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error
+                        ),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("整理する")
+                    }
+                }
             }
         }
 
@@ -277,6 +341,17 @@ fun LibraryScreen(
                     Text("キャンセル")
                 }
             }
+        )
+    }
+
+    if (showDuplicateCleanerDialog) {
+        DuplicateCleanerDialog(
+            tracks = tracks,
+            onDeleteTracks = { ids ->
+                onDeleteMultipleTracks?.invoke(ids)
+                showDuplicateCleanerDialog = false
+            },
+            onDismiss = { showDuplicateCleanerDialog = false }
         )
     }
 }

@@ -353,6 +353,9 @@ fun MainScreen(
                         onToggleFavorite = { trackId ->
                             viewModel.toggleFavorite(trackId)
                         },
+                        onDeleteMultipleTracks = { trackIds ->
+                            viewModel.deleteMultipleTracks(trackIds)
+                        },
                         onUpdateTrackMetadata = { trackId, title, artist, album, thumbUrl ->
                             viewModel.updateTrackMetadata(trackId, title, artist, album, thumbUrl)
                         },

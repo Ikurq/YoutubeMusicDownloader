@@ -610,6 +610,38 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         _statusMessage.value = "「${trackToDelete?.title ?: "楽曲"}」を削除しました"
     }
 
+    fun deleteMultipleTracks(trackIds: Set<String>) {
+        if (trackIds.isEmpty()) return
+        val tracksToDelete = _tracks.value.filter { trackIds.contains(it.id) }
+        tracksToDelete.forEach { track ->
+            track.localFilePath?.let { path ->
+                try {
+                    val file = java.io.File(path)
+                    if (file.exists()) {
+                        file.delete()
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+            if (currentTrack.value?.id == track.id) {
+                playerManager.releasePlayer(stopService = true)
+            }
+        }
+
+        val updatedTracks = _tracks.value.filter { !trackIds.contains(it.id) }
+        _tracks.value = updatedTracks
+        repository.saveTracks(updatedTracks)
+
+        val updatedPlaylists = _playlists.value.map { pl ->
+            pl.copy(trackIds = pl.trackIds.filter { !trackIds.contains(it) })
+        }
+        _playlists.value = updatedPlaylists
+        repository.savePlaylists(updatedPlaylists)
+
+        _statusMessage.value = "${tracksToDelete.size}件の重複楽曲を削除しました"
+    }
+
     fun createPlaylist(name: String) {
         val trimmed = name.trim()
         if (trimmed.isBlank()) return
