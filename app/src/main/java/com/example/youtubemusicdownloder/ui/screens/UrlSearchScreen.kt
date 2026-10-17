@@ -91,6 +91,7 @@ fun UrlSearchScreen(
     onOpenChannel: (channelId: String, channelTitle: String, avatarUrl: String) -> Unit = { _, _, _ -> },
     onCloseChannel: () -> Unit = {},
     matchedPlaylist: PlaylistInfo? = null,
+    matchedPlaylists: List<PlaylistInfo> = emptyList(),
     selectedPlaylist: PlaylistInfo? = null,
     onOpenPlaylist: (PlaylistInfo) -> Unit = {},
     onClosePlaylist: () -> Unit = {},
@@ -692,72 +693,89 @@ fun UrlSearchScreen(
                 )
             }
 
-            // Matched Playlist Banner
-            if (matchedPlaylist != null) {
-                Text(
-                    text = "再生リスト",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(vertical = 6.dp)
-                )
-
-                PlaylistCard(
-                    playlistInfo = matchedPlaylist,
-                    onOpenPlaylist = onOpenPlaylist,
-                    onImportPlaylist = { pl -> onImportPlaylist(pl, false) },
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-            }
-
-            // Matched Channel Banners
-            if (matchedChannels.isNotEmpty()) {
-                Text(
-                    text = "チャンネル",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(vertical = 6.dp)
-                )
-
-                matchedChannels.forEach { channel ->
-                    ChannelCard(
-                        channelInfo = channel,
-                        onChannelClick = onOpenChannel,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
+            val allPlaylists = remember(matchedPlaylist, matchedPlaylists) {
+                if (matchedPlaylists.isNotEmpty()) {
+                    matchedPlaylists
+                } else if (matchedPlaylist != null) {
+                    listOf(matchedPlaylist)
+                } else {
+                    emptyList()
                 }
             }
 
-            // Search Results List
-            if (searchResults.isNotEmpty()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "検索結果 (${searchResults.size}件)",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-
-                    TextButton(onClick = onClearSearch) {
-                        Text("クリア")
-                    }
-                }
-
+            if (allPlaylists.isNotEmpty() || matchedChannels.isNotEmpty() || searchResults.isNotEmpty()) {
                 LazyColumn(
                     modifier = Modifier.weight(1f)
                 ) {
-                    items(searchResults, key = { it.videoId }) { item ->
-                        SearchResultRow(
-                            item = item,
-                            onDownloadClick = {
-                                onAddTrack(it.url, it.title)
-                            },
-                            onChannelClick = onOpenChannel
-                        )
+                    // Playlists Section
+                    if (allPlaylists.isNotEmpty()) {
+                        item(key = "header_playlists") {
+                            Text(
+                                text = "再生リスト (${allPlaylists.size}件)",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(vertical = 8.dp)
+                            )
+                        }
+                        items(allPlaylists, key = { "pl_${it.playlistId}" }) { pl ->
+                            PlaylistCard(
+                                playlistInfo = pl,
+                                onOpenPlaylist = onOpenPlaylist,
+                                onImportPlaylist = { onImportPlaylist(it, false) },
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                        }
+                    }
+
+                    // Channels Section
+                    if (matchedChannels.isNotEmpty()) {
+                        item(key = "header_channels") {
+                            Text(
+                                text = "チャンネル (${matchedChannels.size}件)",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(vertical = 8.dp)
+                            )
+                        }
+                        items(matchedChannels, key = { "ch_${it.channelId}" }) { channel ->
+                            ChannelCard(
+                                channelInfo = channel,
+                                onChannelClick = onOpenChannel,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                        }
+                    }
+
+                    // Videos Section
+                    if (searchResults.isNotEmpty()) {
+                        item(key = "header_videos") {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "楽曲・動画 (${searchResults.size}件)",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+
+                                TextButton(onClick = onClearSearch) {
+                                    Text("クリア")
+                                }
+                            }
+                        }
+                        items(searchResults, key = { it.videoId }) { item ->
+                            SearchResultRow(
+                                item = item,
+                                onDownloadClick = {
+                                    onAddTrack(it.url, it.title)
+                                },
+                                onChannelClick = onOpenChannel
+                            )
+                        }
                     }
                 }
             }

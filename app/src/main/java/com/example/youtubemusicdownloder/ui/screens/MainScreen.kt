@@ -100,6 +100,7 @@ fun MainScreen(
     val channelVideos by viewModel.channelVideos.collectAsState()
     val isLoadingChannel by viewModel.isLoadingChannel.collectAsState()
     val matchedPlaylist by viewModel.matchedPlaylist.collectAsState()
+    val matchedPlaylists by viewModel.matchedPlaylists.collectAsState()
     val selectedPlaylistInfo by viewModel.selectedPlaylistInfo.collectAsState()
     val relatedTracks by viewModel.relatedTracks.collectAsState()
     val isSearching by viewModel.isSearching.collectAsState()
@@ -284,6 +285,7 @@ fun MainScreen(
                         onOpenChannel = { id, title, avatar -> viewModel.openChannel(id, title, avatar) },
                         onCloseChannel = { viewModel.closeChannel() },
                         matchedPlaylist = matchedPlaylist,
+                        matchedPlaylists = matchedPlaylists,
                         selectedPlaylist = selectedPlaylistInfo,
                         onOpenPlaylist = { viewModel.openPlaylist(it) },
                         onClosePlaylist = { viewModel.closePlaylist() },

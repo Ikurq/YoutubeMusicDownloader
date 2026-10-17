@@ -82,6 +82,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private val _matchedPlaylist = MutableStateFlow<PlaylistInfo?>(null)
     val matchedPlaylist: StateFlow<PlaylistInfo?> = _matchedPlaylist.asStateFlow()
 
+    private val _matchedPlaylists = MutableStateFlow<List<PlaylistInfo>>(emptyList())
+    val matchedPlaylists: StateFlow<List<PlaylistInfo>> = _matchedPlaylists.asStateFlow()
+
     private val _selectedPlaylistInfo = MutableStateFlow<PlaylistInfo?>(null)
     val selectedPlaylistInfo: StateFlow<PlaylistInfo?> = _selectedPlaylistInfo.asStateFlow()
 
@@ -340,8 +343,13 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 _searchResults.value = searchData.videos
                 _matchedChannels.value = searchData.matchedChannels
                 _matchedPlaylist.value = searchData.matchedPlaylist
+                _matchedPlaylists.value = searchData.matchedPlaylists
 
-                if (searchData.matchedPlaylist != null) {
+                if (searchData.matchedPlaylists.isNotEmpty()) {
+                    val count = searchData.matchedPlaylists.size
+                    val songMsg = if (searchData.videos.isNotEmpty()) "、楽曲${searchData.videos.size}件" else ""
+                    _statusMessage.value = "再生リスト${count}件$songMsgが見つかりました"
+                } else if (searchData.matchedPlaylist != null) {
                     val pl = searchData.matchedPlaylist
                     _statusMessage.value = "プレイリスト「${pl.title}」（${pl.tracks.size}曲）を取得しました"
                 } else if (searchData.videos.isEmpty() && searchData.matchedChannels.isEmpty()) {
@@ -389,7 +397,28 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun openPlaylist(playlistInfo: PlaylistInfo) {
-        _selectedPlaylistInfo.value = playlistInfo
+        viewModelScope.launch {
+            _selectedPlaylistInfo.value = playlistInfo
+            if (playlistInfo.tracks.isEmpty() && playlistInfo.playlistId.isNotBlank()) {
+                _isLoadingPlaylist.value = true
+                _statusMessage.value = "プレイリスト「${playlistInfo.title}」を読み込み中..."
+                try {
+                    val userCookie = if (userAccountManager.hasValidCookie()) userAccountManager.getCookie() else null
+                    val fullPl = YoutubeSearchService.fetchPlaylistDetails(playlistInfo.playlistId, cookie = userCookie, apiKey = _apiKey.value)
+                    if (fullPl != null) {
+                        _selectedPlaylistInfo.value = fullPl
+                        _statusMessage.value = "プレイリスト「${fullPl.title}」（${fullPl.tracks.size}曲）を読み込みました"
+                    } else {
+                        _statusMessage.value = "プレイリストの読み込みに失敗しました"
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    _statusMessage.value = "プレイリスト読み込みエラー: ${e.message}"
+                } finally {
+                    _isLoadingPlaylist.value = false
+                }
+            }
+        }
     }
 
     fun closePlaylist() {
@@ -466,6 +495,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         _searchResults.value = emptyList()
         _matchedChannels.value = emptyList()
         _matchedPlaylist.value = null
+        _matchedPlaylists.value = emptyList()
         _selectedChannel.value = null
         _selectedPlaylistInfo.value = null
         _channelVideos.value = emptyList()

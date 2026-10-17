@@ -20,7 +20,7 @@ data class ReleaseInfo(
 
 object UpdateManager {
 
-    const val CURRENT_VERSION = "v3.9.7"
+    const val CURRENT_VERSION = "v3.9.8"
     private const val GITHUB_LATEST_RELEASE_URL = "https://api.github.com/repos/Ikurq/YoutubeMusicDownloader/releases/latest"
 
     suspend fun checkForUpdates(): ReleaseInfo? = withContext(Dispatchers.IO) {

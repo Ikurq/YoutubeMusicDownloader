@@ -44,6 +44,7 @@ data class PlaylistInfo(
 data class SearchResultData(
     val matchedChannels: List<ChannelInfo> = emptyList(),
     val matchedPlaylist: PlaylistInfo? = null,
+    val matchedPlaylists: List<PlaylistInfo> = emptyList(),
     val videos: List<SearchResultItem> = emptyList()
 )
 
@@ -51,6 +52,7 @@ enum class SearchFilter(val label: String) {
     ALL("すべて (公式優先)"),
     SONGS("公式楽曲"),
     VIDEOS("MV・動画"),
+    PLAYLISTS("再生リスト"),
     YOUTUBE("YouTube全般")
 }
 
@@ -96,9 +98,19 @@ object YoutubeSearchService {
         }
 
         val channels = mutableListOf<ChannelInfo>()
+        val playlists = mutableListOf<PlaylistInfo>()
         val videos = mutableListOf<SearchResultItem>()
 
         when (filter) {
+            SearchFilter.PLAYLISTS -> {
+                val plList = searchPlaylists(trimmed, apiKey, cookie)
+                return@withContext SearchResultData(
+                    matchedPlaylists = plList,
+                    matchedPlaylist = plList.firstOrNull(),
+                    videos = emptyList()
+                )
+            }
+
             SearchFilter.SONGS, SearchFilter.VIDEOS -> {
                 // Targeted YouTube Music search
                 val ytMusicData = searchViaYoutubeMusic(trimmed, filter)
@@ -109,6 +121,7 @@ object YoutubeSearchService {
                 if (videos.isEmpty()) {
                     val fallback = searchViaInnerTube(trimmed)
                     channels.addAll(fallback.matchedChannels)
+                    playlists.addAll(fallback.matchedPlaylists)
                     val filtered = fallback.videos
                         .filter { !isShortsOrTooLong(it.durationText, it.rawTitle, trimmed) }
                         .filter { !isNoiseVideo(it.rawTitle, it.channelTitle, trimmed) }
@@ -120,6 +133,7 @@ object YoutubeSearchService {
                 // Standard YouTube search with noise filtering & reranking
                 val ytData = searchViaInnerTube(trimmed)
                 channels.addAll(ytData.matchedChannels)
+                playlists.addAll(ytData.matchedPlaylists)
                 val filtered = ytData.videos
                     .filter { !isShortsOrTooLong(it.durationText, it.rawTitle, trimmed) }
                     .filter { !isNoiseVideo(it.rawTitle, it.channelTitle, trimmed) }
@@ -136,6 +150,7 @@ object YoutubeSearchService {
                 // Step B: Standard YouTube search for official MVs and related video entries
                 val ytData = searchViaInnerTube(trimmed)
                 channels.addAll(ytData.matchedChannels)
+                playlists.addAll(ytData.matchedPlaylists)
 
                 val cleanYtVideos = ytData.videos
                     .filter { !isShortsOrTooLong(it.durationText, it.rawTitle, trimmed) }
@@ -179,8 +194,12 @@ object YoutubeSearchService {
         val finalVideos = videos.distinctBy { it.videoId }
             .sortedByDescending { calculateRelevanceScore(it, trimmed) }
 
+        val finalPlaylists = playlists.distinctBy { it.playlistId }
+
         return@withContext SearchResultData(
             matchedChannels = channels.distinctBy { it.channelId },
+            matchedPlaylists = finalPlaylists,
+            matchedPlaylist = finalPlaylists.firstOrNull(),
             videos = finalVideos
         )
     }
@@ -1137,8 +1156,9 @@ object YoutubeSearchService {
         return@withContext list.distinctBy { it.videoId }.take(15)
     }
 
-    private fun searchViaInnerTube(query: String): SearchResultData {
+    private fun searchViaInnerTube(query: String, params: String? = null): SearchResultData {
         val channels = mutableListOf<ChannelInfo>()
+        val playlists = mutableListOf<PlaylistInfo>()
         val videos = mutableListOf<SearchResultItem>()
 
         try {
@@ -1153,6 +1173,9 @@ object YoutubeSearchService {
 
             val body = JSONObject().apply {
                 put("query", query)
+                if (!params.isNullOrBlank()) {
+                    put("params", params)
+                }
                 val context = JSONObject().apply {
                     val client = JSONObject().apply {
                         put("clientName", "WEB")
@@ -1213,6 +1236,73 @@ object YoutubeSearchService {
                                 }
                             }
 
+                            // Parse Playlist Renderer if present
+                            val playlistRenderer = item.optJSONObject("playlistRenderer")
+                            if (playlistRenderer != null) {
+                                val plId = playlistRenderer.optString("playlistId", "")
+                                val plTitle = parseRunsText(playlistRenderer.optJSONObject("title"))
+                                val plAuthor = parseRunsText(playlistRenderer.optJSONObject("shortBylineText"))
+                                    .ifBlank { parseRunsText(playlistRenderer.optJSONObject("longBylineText")) }
+                                val videoCountStr = playlistRenderer.optString("videoCount", "")
+                                    .ifBlank { parseRunsText(playlistRenderer.optJSONObject("videoCountText")) }
+                                val vCount = Regex("""\d+""").find(videoCountStr)?.value?.toIntOrNull() ?: 0
+
+                                val thumbs = playlistRenderer.optJSONObject("thumbnails")
+                                    ?.optJSONArray("thumbnails")
+                                    ?: playlistRenderer.optJSONArray("thumbnails")
+                                val plThumb = if (thumbs != null && thumbs.length() > 0) {
+                                    thumbs.getJSONObject(thumbs.length() - 1).optString("url", "")
+                                } else ""
+
+                                if (plId.isNotBlank() && plTitle.isNotBlank()) {
+                                    playlists.add(
+                                        PlaylistInfo(
+                                            playlistId = plId,
+                                            title = plTitle,
+                                            author = plAuthor.ifBlank { "YouTube" },
+                                            thumbnailUrl = plThumb,
+                                            trackCount = vCount
+                                        )
+                                    )
+                                }
+                            }
+
+                            // Parse Lockup ViewModel (Playlist / Album)
+                            val lockupVm = item.optJSONObject("lockupViewModel")
+                            if (lockupVm != null) {
+                                val cId = lockupVm.optString("contentId", "")
+                                val cType = lockupVm.optString("contentType", "")
+                                if (cId.startsWith("PL") || cId.startsWith("OLAK5uy_") || cType.contains("PLAYLIST", ignoreCase = true)) {
+                                    val meta = lockupVm.optJSONObject("metadata")?.optJSONObject("lockupMetadataViewModel")
+                                    val plTitle = meta?.optJSONObject("title")?.optString("content", "") ?: ""
+                                    var plAuthor = ""
+                                    val metaRows = meta?.optJSONObject("metadata")?.optJSONArray("metadataRows")
+                                    if (metaRows != null && metaRows.length() > 0) {
+                                        val parts = metaRows.getJSONObject(0).optJSONArray("metadataParts")
+                                        if (parts != null && parts.length() > 0) {
+                                            plAuthor = parts.getJSONObject(0).optJSONObject("text")?.optString("content", "") ?: ""
+                                        }
+                                    }
+                                    val thumbUrl = lockupVm.optJSONObject("contentImage")
+                                        ?.optJSONObject("thumbnailViewModel")
+                                        ?.optJSONArray("image")?.let { imgArr ->
+                                            if (imgArr.length() > 0) imgArr.getJSONObject(imgArr.length() - 1).optString("url", "") else ""
+                                        } ?: ""
+
+                                    if (cId.isNotBlank() && plTitle.isNotBlank()) {
+                                        playlists.add(
+                                            PlaylistInfo(
+                                                playlistId = cId,
+                                                title = plTitle,
+                                                author = plAuthor.ifBlank { "YouTube" },
+                                                thumbnailUrl = thumbUrl,
+                                                trackCount = 0
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+
                             // Parse Video Renderer
                             val videoRenderer = item.optJSONObject("videoRenderer")
                             if (videoRenderer != null) {
@@ -1270,6 +1360,7 @@ object YoutubeSearchService {
 
         return SearchResultData(
             matchedChannels = channels,
+            matchedPlaylists = playlists.distinctBy { it.playlistId },
             videos = videos
         )
     }
@@ -1376,6 +1467,96 @@ object YoutubeSearchService {
                             rawTitle = titleText
                         )
                     )
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return list
+    }
+
+    suspend fun searchPlaylists(
+        query: String,
+        apiKey: String? = null,
+        cookie: String? = null
+    ): List<PlaylistInfo> = withContext(Dispatchers.IO) {
+        val trimmed = query.trim()
+        if (trimmed.isBlank()) return@withContext emptyList()
+
+        val list = mutableListOf<PlaylistInfo>()
+
+        // 1. InnerTube WEB search with playlist filter params ("EgIQAw==")
+        try {
+            val innerTubeData = searchViaInnerTube(trimmed, params = "EgIQAw==")
+            list.addAll(innerTubeData.matchedPlaylists)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        // 2. If empty and query does not already contain "playlist" or "再生リスト", append keyword
+        if (list.isEmpty()) {
+            try {
+                val innerTubeData = searchViaInnerTube("$trimmed プレイリスト")
+                list.addAll(innerTubeData.matchedPlaylists)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        // 3. Fallback to YouTube Data API v3 if API key is provided and list is still empty
+        if (list.isEmpty() && !apiKey.isNullOrBlank()) {
+            try {
+                val apiPlaylists = searchPlaylistsViaApi(trimmed, apiKey)
+                list.addAll(apiPlaylists)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        return@withContext list.distinctBy { it.playlistId }
+    }
+
+    private fun searchPlaylistsViaApi(query: String, apiKey: String): List<PlaylistInfo> {
+        val list = mutableListOf<PlaylistInfo>()
+        try {
+            val encoded = URLEncoder.encode(query, "UTF-8")
+            val urlStr = "https://www.googleapis.com/youtube/v3/search?part=snippet&type=playlist&q=$encoded&maxResults=20&key=${apiKey.trim()}"
+            val connection = URL(urlStr).openConnection() as HttpURLConnection
+            connection.connectTimeout = 8000
+            connection.readTimeout = 8000
+            connection.requestMethod = "GET"
+
+            if (connection.responseCode == 200) {
+                val jsonStr = connection.inputStream.bufferedReader().use { it.readText() }
+                val json = JSONObject(jsonStr)
+                val items = json.optJSONArray("items")
+                if (items != null) {
+                    for (i in 0 until items.length()) {
+                        val item = items.getJSONObject(i)
+                        val idObj = item.optJSONObject("id")
+                        val playlistId = idObj?.optString("playlistId") ?: continue
+                        val snippet = item.optJSONObject("snippet") ?: continue
+
+                        val title = snippet.optString("title")
+                        val channelTitle = snippet.optString("channelTitle")
+                        val thumbnails = snippet.optJSONObject("thumbnails")
+                        val thumbUrl = thumbnails?.optJSONObject("high")?.optString("url")
+                            ?: thumbnails?.optJSONObject("medium")?.optString("url")
+                            ?: thumbnails?.optJSONObject("default")?.optString("url")
+                            ?: ""
+
+                        if (playlistId.isNotBlank() && title.isNotBlank()) {
+                            list.add(
+                                PlaylistInfo(
+                                    playlistId = playlistId,
+                                    title = title,
+                                    author = channelTitle.ifBlank { "YouTube" },
+                                    thumbnailUrl = thumbUrl,
+                                    trackCount = 0
+                                )
+                            )
+                        }
+                    }
                 }
             }
         } catch (e: Exception) {
