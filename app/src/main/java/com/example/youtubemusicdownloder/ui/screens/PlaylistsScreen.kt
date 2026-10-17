@@ -1,6 +1,7 @@
 package com.example.youtubemusicdownloder.ui.screens
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.AlertDialog
@@ -42,10 +44,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.youtubemusicdownloder.model.Playlist
+import com.example.youtubemusicdownloder.data.PlaylistInfo
 import com.example.youtubemusicdownloder.data.SearchResultItem
 import com.example.youtubemusicdownloder.model.Track
 import com.example.youtubemusicdownloder.ui.components.CreatePlaylistDialog
 import com.example.youtubemusicdownloder.ui.components.EditTrackMetadataDialog
+import com.example.youtubemusicdownloder.ui.components.ImportPlaylistDialog
 import com.example.youtubemusicdownloder.ui.components.PlaylistItem
 import com.example.youtubemusicdownloder.ui.components.TrackItem
 
@@ -64,10 +68,13 @@ fun PlaylistsScreen(
     onRemoveFromPlaylist: (playlistId: String, trackId: String) -> Unit,
     onAddToPlaylistClick: (track: Track) -> Unit,
     onUpdateTrackMetadata: ((trackId: String, title: String, artist: String, album: String, thumbnailUrl: String?) -> Unit)? = null,
-    onSearchCandidates: (suspend (query: String) -> List<SearchResultItem>)? = null
+    onSearchCandidates: (suspend (query: String) -> List<SearchResultItem>)? = null,
+    onFetchPlaylistDirectly: (suspend (urlOrId: String) -> PlaylistInfo?)? = null,
+    onImportPlaylist: ((playlistInfo: PlaylistInfo, downloadAll: Boolean) -> Unit)? = null
 ) {
     var selectedPlaylistId by rememberSaveable { mutableStateOf<String?>(null) }
     var showCreateDialog by remember { mutableStateOf(false) }
+    var showImportDialog by remember { mutableStateOf(false) }
     var playlistToDelete by remember { mutableStateOf<Playlist?>(null) }
     var trackToEdit by remember { mutableStateOf<Track?>(null) }
 
@@ -224,18 +231,31 @@ fun PlaylistsScreen(
                             )
                         }
 
-                        Button(
-                            onClick = onGenerateAiPlaylists,
-                            enabled = allTracks.isNotEmpty(),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        ) {
-                            Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("AI 自動作成", fontWeight = FontWeight.Bold)
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            if (onFetchPlaylistDirectly != null && onImportPlaylist != null) {
+                                OutlinedButton(
+                                    onClick = { showImportDialog = true },
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("URL取得", fontWeight = FontWeight.Bold)
+                                }
+                            }
+
+                            Button(
+                                onClick = onGenerateAiPlaylists,
+                                enabled = allTracks.isNotEmpty(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            ) {
+                                Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("AI 自動作成", fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
 
@@ -308,6 +328,14 @@ fun PlaylistsScreen(
                 trackToEdit = null
             },
             onDismiss = { trackToEdit = null }
+        )
+    }
+
+    if (showImportDialog && onFetchPlaylistDirectly != null && onImportPlaylist != null) {
+        ImportPlaylistDialog(
+            onDismiss = { showImportDialog = false },
+            onFetchPlaylist = onFetchPlaylistDirectly,
+            onImport = onImportPlaylist
         )
     }
 }

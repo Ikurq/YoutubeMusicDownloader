@@ -13,6 +13,10 @@ object YoutubeExtractor {
         "(?:v=|/shorts/|/embed/|youtu\\.be/|v/)([a-zA-Z0-9_-]{11})"
     )
 
+    private val PLAYLIST_ID_PATTERN = Pattern.compile(
+        "(?:[?&]list=)([a-zA-Z0-9_-]+)"
+    )
+
     fun extractVideoId(url: String): String? {
         val trimmed = url.trim()
         val matcher = YOUTUBE_ID_PATTERN.matcher(trimmed)
@@ -23,6 +27,22 @@ object YoutubeExtractor {
                 trimmed
             } else null
         }
+    }
+
+    fun extractPlaylistId(url: String): String? {
+        val trimmed = url.trim()
+        val matcher = PLAYLIST_ID_PATTERN.matcher(trimmed)
+        if (matcher.find()) {
+            val id = matcher.group(1)
+            if (!id.isNullOrBlank()) return id
+        }
+        // Direct playlist ID entered (e.g. PL..., OLAK5uy_...)
+        if (trimmed.startsWith("PL") || trimmed.startsWith("OLAK5uy_") || trimmed.startsWith("RDCLAK")) {
+            if (trimmed.length >= 10 && trimmed.matches(Regex("[a-zA-Z0-9_-]+"))) {
+                return trimmed
+            }
+        }
+        return null
     }
 
     fun getThumbnailUrl(videoId: String): String {

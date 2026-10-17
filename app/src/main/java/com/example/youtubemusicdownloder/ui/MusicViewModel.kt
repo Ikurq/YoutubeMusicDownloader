@@ -77,6 +77,15 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private val _isLoadingChannel = MutableStateFlow(false)
     val isLoadingChannel: StateFlow<Boolean> = _isLoadingChannel.asStateFlow()
 
+    private val _matchedPlaylist = MutableStateFlow<PlaylistInfo?>(null)
+    val matchedPlaylist: StateFlow<PlaylistInfo?> = _matchedPlaylist.asStateFlow()
+
+    private val _selectedPlaylistInfo = MutableStateFlow<PlaylistInfo?>(null)
+    val selectedPlaylistInfo: StateFlow<PlaylistInfo?> = _selectedPlaylistInfo.asStateFlow()
+
+    private val _isLoadingPlaylist = MutableStateFlow(false)
+    val isLoadingPlaylist: StateFlow<Boolean> = _isLoadingPlaylist.asStateFlow()
+
     private val _relatedTracks = MutableStateFlow<List<SearchResultItem>>(emptyList())
     val relatedTracks: StateFlow<List<SearchResultItem>> = _relatedTracks.asStateFlow()
 
@@ -324,11 +333,16 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             _isSearching.value = true
             _statusMessage.value = "YouTube Music / YouTube を高精度検索中..."
             try {
-                val searchData = YoutubeSearchService.search(trimmed, _apiKey.value, filter)
+                val userCookie = if (userAccountManager.hasValidCookie()) userAccountManager.getCookie() else null
+                val searchData = YoutubeSearchService.search(trimmed, _apiKey.value, filter, cookie = userCookie)
                 _searchResults.value = searchData.videos
                 _matchedChannels.value = searchData.matchedChannels
+                _matchedPlaylist.value = searchData.matchedPlaylist
 
-                if (searchData.videos.isEmpty() && searchData.matchedChannels.isEmpty()) {
+                if (searchData.matchedPlaylist != null) {
+                    val pl = searchData.matchedPlaylist
+                    _statusMessage.value = "プレイリスト「${pl.title}」（${pl.tracks.size}曲）を取得しました"
+                } else if (searchData.videos.isEmpty() && searchData.matchedChannels.isEmpty()) {
                     _statusMessage.value = "検索結果が見つかりませんでした"
                 } else {
                     val channelMsg = if (searchData.matchedChannels.isNotEmpty()) "（チャンネル${searchData.matchedChannels.size}件）" else ""
@@ -372,10 +386,86 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         _channelVideos.value = emptyList()
     }
 
+    fun openPlaylist(playlistInfo: PlaylistInfo) {
+        _selectedPlaylistInfo.value = playlistInfo
+    }
+
+    fun closePlaylist() {
+        _selectedPlaylistInfo.value = null
+    }
+
+    suspend fun fetchPlaylistDirectly(urlOrId: String): PlaylistInfo? {
+        val plId = YoutubeExtractor.extractPlaylistId(urlOrId) ?: urlOrId.trim()
+        if (plId.isBlank()) return null
+        val userCookie = if (userAccountManager.hasValidCookie()) userAccountManager.getCookie() else null
+        return YoutubeSearchService.fetchPlaylistDetails(plId, cookie = userCookie, apiKey = _apiKey.value)
+    }
+
+    fun importPlaylistToApp(playlistInfo: PlaylistInfo, downloadAll: Boolean = false) {
+        viewModelScope.launch {
+            if (playlistInfo.tracks.isEmpty()) {
+                _statusMessage.value = "プレイリストに楽曲がありません"
+                return@launch
+            }
+
+            // 1. Create or find target playlist in app
+            val plTitle = playlistInfo.title.trim().ifBlank { "インポートしたプレイリスト" }
+            val existingPl = _playlists.value.find { it.name.equals(plTitle, ignoreCase = true) }
+            val targetPlaylist = existingPl ?: Playlist(name = plTitle)
+            if (existingPl == null) {
+                _playlists.value = _playlists.value + targetPlaylist
+            }
+
+            // 2. Register tracks to library
+            val currentTracks = _tracks.value.toMutableList()
+            val newTrackIds = mutableListOf<String>()
+
+            for (item in playlistInfo.tracks) {
+                var existingTrack = currentTracks.find { it.youtubeUrl == item.url || it.id == item.videoId }
+                if (existingTrack == null) {
+                    existingTrack = Track(
+                        id = item.videoId,
+                        title = item.title,
+                        artist = item.channelTitle,
+                        album = item.albumName.ifBlank { plTitle },
+                        youtubeUrl = item.url,
+                        thumbnailUrl = item.thumbnailUrl,
+                        isDownloaded = false
+                    )
+                    currentTracks.add(existingTrack)
+                }
+                newTrackIds.add(existingTrack.id)
+            }
+
+            _tracks.value = currentTracks
+            repository.saveTracks(currentTracks)
+
+            // 3. Attach track IDs to playlist
+            val updatedPlList = _playlists.value.map { pl ->
+                if (pl.id == targetPlaylist.id) {
+                    val combined = (pl.trackIds + newTrackIds).distinct()
+                    pl.copy(trackIds = combined)
+                } else pl
+            }
+            _playlists.value = updatedPlList
+            repository.savePlaylists(updatedPlList)
+
+            // 4. Trigger download if requested
+            if (downloadAll) {
+                addMultipleToDownloadQueue(playlistInfo.tracks.map { Pair(it.url, it.title) })
+                _statusMessage.value = "プレイリスト「$plTitle」（${playlistInfo.tracks.size}曲）を保存し、ダウンロードを開始しました"
+            } else {
+                _statusMessage.value = "プレイリスト「$plTitle」（${playlistInfo.tracks.size}曲）をインポートしました"
+            }
+        }
+    }
+
     fun clearSearchResults() {
         _searchResults.value = emptyList()
         _matchedChannels.value = emptyList()
+        _matchedPlaylist.value = null
         _selectedChannel.value = null
+        _selectedPlaylistInfo.value = null
         _channelVideos.value = emptyList()
         _searchSuggestions.value = emptyList()
         _lastSearchQuery.value = ""

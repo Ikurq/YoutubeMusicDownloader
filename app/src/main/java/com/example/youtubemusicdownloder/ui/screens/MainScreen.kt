@@ -99,6 +99,8 @@ fun MainScreen(
     val selectedChannel by viewModel.selectedChannel.collectAsState()
     val channelVideos by viewModel.channelVideos.collectAsState()
     val isLoadingChannel by viewModel.isLoadingChannel.collectAsState()
+    val matchedPlaylist by viewModel.matchedPlaylist.collectAsState()
+    val selectedPlaylistInfo by viewModel.selectedPlaylistInfo.collectAsState()
     val relatedTracks by viewModel.relatedTracks.collectAsState()
     val isSearching by viewModel.isSearching.collectAsState()
     val searchFilter by viewModel.searchFilter.collectAsState()
@@ -108,7 +110,11 @@ fun MainScreen(
         showPlayerSheet = false
     }
 
-    BackHandler(enabled = !showPlayerSheet && selectedChannel != null) {
+    BackHandler(enabled = !showPlayerSheet && selectedPlaylistInfo != null) {
+        viewModel.closePlaylist()
+    }
+
+    BackHandler(enabled = !showPlayerSheet && selectedPlaylistInfo == null && selectedChannel != null) {
         viewModel.closeChannel()
     }
 
@@ -277,6 +283,11 @@ fun MainScreen(
                         isLoadingChannel = isLoadingChannel,
                         onOpenChannel = { id, title, avatar -> viewModel.openChannel(id, title, avatar) },
                         onCloseChannel = { viewModel.closeChannel() },
+                        matchedPlaylist = matchedPlaylist,
+                        selectedPlaylist = selectedPlaylistInfo,
+                        onOpenPlaylist = { viewModel.openPlaylist(it) },
+                        onClosePlaylist = { viewModel.closePlaylist() },
+                        onImportPlaylist = { pl, dlAll -> viewModel.importPlaylistToApp(pl, dlAll) },
                         onAddMultipleTracks = { items -> viewModel.addMultipleToDownloadQueue(items) },
                         searchFilter = searchFilter,
                         onFilterChange = { viewModel.setSearchFilter(it) },
@@ -310,7 +321,9 @@ fun MainScreen(
                         },
                         onSearchCandidates = { query ->
                             viewModel.searchMetadataCandidates(query)
-                        }
+                        },
+                        onFetchPlaylistDirectly = { viewModel.fetchPlaylistDirectly(it) },
+                        onImportPlaylist = { pl, dlAll -> viewModel.importPlaylistToApp(pl, dlAll) }
                     )
                     2 -> LibraryScreen(
                         tracks = tracks,

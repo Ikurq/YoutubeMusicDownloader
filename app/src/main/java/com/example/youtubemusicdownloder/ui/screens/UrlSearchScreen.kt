@@ -62,12 +62,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.youtubemusicdownloder.data.ChannelInfo
+import com.example.youtubemusicdownloder.data.PlaylistInfo
 import com.example.youtubemusicdownloder.data.SearchFilter
 import com.example.youtubemusicdownloder.data.SearchResultItem
 import com.example.youtubemusicdownloder.data.YoutubeExtractor
 import com.example.youtubemusicdownloder.ui.components.ApiSettingsCard
 import com.example.youtubemusicdownloder.ui.components.ChannelCard
 import com.example.youtubemusicdownloder.ui.components.DirectUrlPreviewCard
+import com.example.youtubemusicdownloder.ui.components.PlaylistCard
 import com.example.youtubemusicdownloder.ui.components.SearchResultRow
 
 @Composable
@@ -88,6 +90,11 @@ fun UrlSearchScreen(
     isLoadingChannel: Boolean = false,
     onOpenChannel: (channelId: String, channelTitle: String, avatarUrl: String) -> Unit = { _, _, _ -> },
     onCloseChannel: () -> Unit = {},
+    matchedPlaylist: PlaylistInfo? = null,
+    selectedPlaylist: PlaylistInfo? = null,
+    onOpenPlaylist: (PlaylistInfo) -> Unit = {},
+    onClosePlaylist: () -> Unit = {},
+    onImportPlaylist: (PlaylistInfo, Boolean) -> Unit = { _, _ -> },
     onAddMultipleTracks: (List<Pair<String, String>>) -> Unit = {},
     searchFilter: SearchFilter = SearchFilter.ALL,
     onFilterChange: (SearchFilter) -> Unit = {},
@@ -112,7 +119,154 @@ fun UrlSearchScreen(
             .background(MaterialTheme.colorScheme.background)
             .padding(16.dp)
     ) {
-        if (selectedChannel != null) {
+        if (selectedPlaylist != null) {
+            // === Playlist Detail View ===
+            var playlistFilterQuery by remember { mutableStateOf("") }
+            val filteredPlaylistTracks = remember(selectedPlaylist, playlistFilterQuery) {
+                if (playlistFilterQuery.isBlank()) selectedPlaylist.tracks
+                else selectedPlaylist.tracks.filter {
+                    it.title.contains(playlistFilterQuery, ignoreCase = true) ||
+                    it.channelTitle.contains(playlistFilterQuery, ignoreCase = true)
+                }
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onClosePlaylist) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "戻る"
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(4.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = selectedPlaylist.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "再生リスト楽曲一覧 (${selectedPlaylist.tracks.size}曲)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            // Playlist Header Card with Batch Actions
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (selectedPlaylist.thumbnailUrl.isNotBlank()) {
+                            AsyncImage(
+                                model = selectedPlaylist.thumbnailUrl,
+                                contentDescription = selectedPlaylist.title,
+                                modifier = Modifier
+                                    .size(54.dp)
+                                    .clip(RoundedCornerShape(8.dp)),
+                                contentScale = ContentScale.Crop
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = selectedPlaylist.title,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            if (selectedPlaylist.author.isNotBlank()) {
+                                Text(
+                                    text = "作成: ${selectedPlaylist.author}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = { onImportPlaylist(selectedPlaylist, false) },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text("プレイリストに追加")
+                        }
+
+                        Button(
+                            onClick = {
+                                onImportPlaylist(selectedPlaylist, true)
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        ) {
+                            Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("全曲を保存 (DL)")
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Search filter within playlist
+            OutlinedTextField(
+                value = playlistFilterQuery,
+                onValueChange = { playlistFilterQuery = it },
+                label = { Text("リスト内の曲を絞り込み") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(10.dp)
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(filteredPlaylistTracks, key = { it.videoId }) { item ->
+                    SearchResultRow(
+                        item = item,
+                        isDownloading = isDownloading,
+                        onAddTrack = onAddTrack
+                    )
+                }
+            }
+        } else if (selectedChannel != null) {
             // === Channel Detail View ===
             Row(
                 modifier = Modifier
@@ -533,6 +687,23 @@ fun UrlSearchScreen(
                         onAddTrack(searchInput, customTitle)
                         searchInput = ""
                     }
+                )
+            }
+
+            // Matched Playlist Banner
+            if (matchedPlaylist != null) {
+                Text(
+                    text = "再生リスト",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(vertical = 6.dp)
+                )
+
+                PlaylistCard(
+                    playlistInfo = matchedPlaylist,
+                    onOpenPlaylist = onOpenPlaylist,
+                    onImportPlaylist = { pl -> onImportPlaylist(pl, false) },
+                    modifier = Modifier.padding(bottom = 8.dp)
                 )
             }
 

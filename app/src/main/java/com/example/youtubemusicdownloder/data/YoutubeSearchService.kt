@@ -31,8 +31,19 @@ data class ChannelInfo(
     val description: String = ""
 )
 
+data class PlaylistInfo(
+    val playlistId: String,
+    val title: String,
+    val author: String = "",
+    val thumbnailUrl: String = "",
+    val trackCount: Int = 0,
+    val description: String = "",
+    val tracks: List<SearchResultItem> = emptyList()
+)
+
 data class SearchResultData(
     val matchedChannels: List<ChannelInfo> = emptyList(),
+    val matchedPlaylist: PlaylistInfo? = null,
     val videos: List<SearchResultItem> = emptyList()
 )
 
@@ -56,10 +67,23 @@ object YoutubeSearchService {
     suspend fun search(
         query: String,
         apiKey: String? = null,
-        filter: SearchFilter = SearchFilter.ALL
+        filter: SearchFilter = SearchFilter.ALL,
+        cookie: String? = null
     ): SearchResultData = withContext(Dispatchers.IO) {
         val trimmed = query.trim()
         if (trimmed.isBlank()) return@withContext SearchResultData()
+
+        // 0. If query is a playlist URL or playlist ID, resolve playlist directly
+        val explicitPlaylistId = YoutubeExtractor.extractPlaylistId(trimmed)
+        if (explicitPlaylistId != null) {
+            val plInfo = fetchPlaylistDetails(explicitPlaylistId, cookie = cookie, apiKey = apiKey)
+            if (plInfo != null) {
+                return@withContext SearchResultData(
+                    matchedPlaylist = plInfo,
+                    videos = plInfo.tracks
+                )
+            }
+        }
 
         // 1. If query is a channel URL (e.g. youtube.com/channel/UC...), resolve directly
         val explicitChannelId = extractChannelIdFromUrl(trimmed)
@@ -209,6 +233,345 @@ object YoutubeSearchService {
         }
 
         return@withContext Pair(ChannelInfo(channelId = channelId, title = "チャンネル"), emptyList())
+    }
+
+    suspend fun fetchPlaylistDetails(
+        playlistId: String,
+        cookie: String? = null,
+        apiKey: String? = null
+    ): PlaylistInfo? = withContext(Dispatchers.IO) {
+        if (playlistId.isBlank()) return@withContext null
+
+        val cleanPlId = playlistId.trim()
+        val browseId = if (cleanPlId.startsWith("VL")) cleanPlId else "VL$cleanPlId"
+
+        // 1. Try YouTube Music InnerTube (browse API)
+        try {
+            val ytmResult = fetchPlaylistViaYtmBrowse(browseId, cleanPlId, cookie)
+            if (ytmResult != null && (ytmResult.tracks.isNotEmpty() || ytmResult.title.isNotBlank())) {
+                return@withContext ytmResult
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        // 2. Try YouTube Web InnerTube browse API
+        try {
+            val webResult = fetchPlaylistViaWebBrowse(browseId, cleanPlId, cookie)
+            if (webResult != null && (webResult.tracks.isNotEmpty() || webResult.title.isNotBlank())) {
+                return@withContext webResult
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        // 3. Try YouTube Data API v3 if API key is provided
+        if (!apiKey.isNullOrBlank()) {
+            try {
+                val apiResult = fetchPlaylistViaApi(cleanPlId, apiKey)
+                if (apiResult != null) {
+                    return@withContext apiResult
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        return@withContext null
+    }
+
+    private fun fetchPlaylistViaYtmBrowse(browseId: String, rawPlaylistId: String, cookie: String?): PlaylistInfo? {
+        try {
+            val url = URL("https://music.youtube.com/youtubei/v1/browse")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            conn.setRequestProperty("Origin", "https://music.youtube.com")
+            conn.setRequestProperty("Referer", "https://music.youtube.com/")
+            if (!cookie.isNullOrBlank()) {
+                conn.setRequestProperty("Cookie", cookie)
+                val sapisid = UserAccountManager.extractCookieValue(cookie, "SAPISID")
+                    ?: UserAccountManager.extractCookieValue(cookie, "__Secure-3PAPISID")
+                if (sapisid != null) {
+                    val authHash = UserAccountManager.generateSapisidHash(sapisid, "https://music.youtube.com")
+                    conn.setRequestProperty("Authorization", "SAPISIDHASH $authHash")
+                }
+            }
+            conn.connectTimeout = 10000
+            conn.readTimeout = 10000
+            conn.doOutput = true
+
+            val body = JSONObject().apply {
+                put("browseId", browseId)
+                val context = JSONObject().apply {
+                    val client = JSONObject().apply {
+                        put("clientName", "WEB_REMIX")
+                        put("clientVersion", "1.20241216.01.00")
+                        put("hl", "ja")
+                        put("gl", "JP")
+                    }
+                    put("client", client)
+                }
+                put("context", context)
+            }
+
+            conn.outputStream.use { os ->
+                os.write(body.toString().toByteArray(Charsets.UTF_8))
+            }
+
+            if (conn.responseCode == 200) {
+                val jsonStr = conn.inputStream.bufferedReader().use { it.readText() }
+                val json = JSONObject(jsonStr)
+
+                var title = ""
+                var author = ""
+                var thumbnailUrl = ""
+
+                val tabs = json.optJSONObject("contents")
+                    ?.optJSONObject("twoColumnBrowseResultsRenderer")
+                    ?.optJSONArray("tabs")
+                val sectionList = tabs?.optJSONObject(0)
+                    ?.optJSONObject("tabRenderer")
+                    ?.optJSONObject("content")
+                    ?.optJSONObject("sectionListRenderer")
+                val sections = sectionList?.optJSONArray("contents")
+
+                val headerObj = json.optJSONObject("header")?.optJSONObject("musicResponsiveHeaderRenderer")
+                    ?: sections?.optJSONObject(0)?.optJSONObject("musicResponsiveHeaderRenderer")
+
+                if (headerObj != null) {
+                    title = parseRunsText(headerObj.optJSONObject("title"))
+                    author = parseRunsText(headerObj.optJSONObject("straplineTextOne"))
+                        .ifBlank { parseRunsText(headerObj.optJSONObject("subtitle")) }
+                    thumbnailUrl = headerObj.optJSONObject("thumbnail")
+                        ?.optJSONObject("musicThumbnailRenderer")
+                        ?.optJSONObject("thumbnail")
+                        ?.optJSONArray("thumbnails")?.let { thumbs ->
+                            if (thumbs.length() > 0) thumbs.getJSONObject(thumbs.length() - 1).optString("url") else ""
+                        } ?: ""
+                }
+
+                if (title.isBlank()) {
+                    title = json.optJSONObject("metadata")?.optJSONObject("playlistMetadataRenderer")?.optString("title", "") ?: ""
+                }
+
+                val videos = mutableListOf<SearchResultItem>()
+
+                if (sections != null) {
+                    for (i in 0 until sections.length()) {
+                        val sec = sections.getJSONObject(i)
+                        val shelf = sec.optJSONObject("musicPlaylistShelfRenderer")
+                            ?: sec.optJSONObject("musicShelfRenderer")
+                        val items = shelf?.optJSONArray("contents")
+                        if (items != null) {
+                            for (j in 0 until items.length()) {
+                                val itemObj = items.getJSONObject(j).optJSONObject("musicResponsiveListItemRenderer")
+                                if (itemObj != null) {
+                                    parseMusicResponsiveListItem(itemObj)?.let { videos.add(it) }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (videos.isNotEmpty() || title.isNotBlank()) {
+                    return PlaylistInfo(
+                        playlistId = rawPlaylistId,
+                        title = title.ifBlank { "再生リスト" },
+                        author = author.ifBlank { "YouTube" },
+                        thumbnailUrl = thumbnailUrl.ifBlank {
+                            if (videos.isNotEmpty()) videos.first().thumbnailUrl else ""
+                        },
+                        trackCount = videos.size,
+                        tracks = videos.distinctBy { it.videoId }
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return null
+    }
+
+    private fun fetchPlaylistViaWebBrowse(browseId: String, rawPlaylistId: String, cookie: String?): PlaylistInfo? {
+        try {
+            val url = URL("https://www.youtube.com/youtubei/v1/browse")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+            if (!cookie.isNullOrBlank()) {
+                conn.setRequestProperty("Cookie", cookie)
+            }
+            conn.connectTimeout = 10000
+            conn.readTimeout = 10000
+            conn.doOutput = true
+
+            val body = JSONObject().apply {
+                put("browseId", browseId)
+                val context = JSONObject().apply {
+                    val client = JSONObject().apply {
+                        put("clientName", "WEB")
+                        put("clientVersion", "2.20241216.01.00")
+                        put("hl", "ja")
+                        put("gl", "JP")
+                    }
+                    put("client", client)
+                }
+                put("context", context)
+            }
+
+            conn.outputStream.use { os ->
+                os.write(body.toString().toByteArray(Charsets.UTF_8))
+            }
+
+            if (conn.responseCode == 200) {
+                val jsonStr = conn.inputStream.bufferedReader().use { it.readText() }
+                val json = JSONObject(jsonStr)
+
+                var title = json.optJSONObject("metadata")?.optJSONObject("playlistMetadataRenderer")?.optString("title", "") ?: ""
+                val header = json.optJSONObject("header")?.optJSONObject("playlistHeaderRenderer")
+                if (title.isBlank() && header != null) {
+                    title = parseRunsText(header.optJSONObject("title"))
+                }
+
+                var author = ""
+                if (header != null) {
+                    author = parseRunsText(header.optJSONObject("ownerText"))
+                }
+
+                val videos = mutableListOf<SearchResultItem>()
+                val tabs = json.optJSONObject("contents")
+                    ?.optJSONObject("twoColumnBrowseResultsRenderer")
+                    ?.optJSONArray("tabs")
+                val sectionList = tabs?.optJSONObject(0)
+                    ?.optJSONObject("tabRenderer")
+                    ?.optJSONObject("content")
+                    ?.optJSONObject("sectionListRenderer")
+                val sections = sectionList?.optJSONArray("contents")
+
+                if (sections != null) {
+                    for (i in 0 until sections.length()) {
+                        val sec = sections.getJSONObject(i)
+                        val itemSec = sec.optJSONObject("itemSectionRenderer")
+                        val itemContents = itemSec?.optJSONArray("contents")
+                        if (itemContents != null) {
+                            for (j in 0 until itemContents.length()) {
+                                val listRenderer = itemContents.getJSONObject(j).optJSONObject("playlistVideoListRenderer")
+                                val videoItems = listRenderer?.optJSONArray("contents")
+                                if (videoItems != null) {
+                                    for (k in 0 until videoItems.length()) {
+                                        val vObj = videoItems.getJSONObject(k).optJSONObject("playlistVideoRenderer")
+                                        if (vObj != null) {
+                                            val vid = vObj.optString("videoId", "")
+                                            val vTitle = parseRunsText(vObj.optJSONObject("title"))
+                                            val vAuthor = parseRunsText(vObj.optJSONObject("shortBylineText"))
+                                            val vDuration = vObj.optJSONObject("lengthText")?.optString("simpleText", "") ?: ""
+                                            if (vid.isNotBlank() && vTitle.isNotBlank()) {
+                                                videos.add(
+                                                    SearchResultItem(
+                                                        videoId = vid,
+                                                        title = vTitle,
+                                                        channelTitle = vAuthor.ifBlank { "YouTube" },
+                                                        thumbnailUrl = YoutubeExtractor.getThumbnailUrl(vid),
+                                                        url = "https://www.youtube.com/watch?v=$vid",
+                                                        durationText = vDuration,
+                                                        rawTitle = vTitle
+                                                    )
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (videos.isNotEmpty() || title.isNotBlank()) {
+                    return PlaylistInfo(
+                        playlistId = rawPlaylistId,
+                        title = title.ifBlank { "再生リスト" },
+                        author = author.ifBlank { "YouTube" },
+                        thumbnailUrl = if (videos.isNotEmpty()) videos.first().thumbnailUrl else "",
+                        trackCount = videos.size,
+                        tracks = videos.distinctBy { it.videoId }
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return null
+    }
+
+    private fun fetchPlaylistViaApi(playlistId: String, apiKey: String): PlaylistInfo? {
+        try {
+            var title = "再生リスト"
+            var author = "YouTube"
+            var thumb = ""
+            val metaUrl = "https://www.googleapis.com/youtube/v3/playlists?part=snippet,contentDetails&id=$playlistId&key=$apiKey"
+            val metaConn = URL(metaUrl).openConnection() as HttpURLConnection
+            metaConn.connectTimeout = 8000
+            metaConn.readTimeout = 8000
+            if (metaConn.responseCode == 200) {
+                val json = JSONObject(metaConn.inputStream.bufferedReader().use { it.readText() })
+                val items = json.optJSONArray("items")
+                if (items != null && items.length() > 0) {
+                    val snippet = items.getJSONObject(0).optJSONObject("snippet")
+                    title = snippet?.optString("title", title) ?: title
+                    author = snippet?.optString("channelTitle", author) ?: author
+                    thumb = snippet?.optJSONObject("thumbnails")?.optJSONObject("high")?.optString("url", "") ?: ""
+                }
+            }
+
+            val itemsUrl = "https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=$playlistId&key=$apiKey"
+            val itemsConn = URL(itemsUrl).openConnection() as HttpURLConnection
+            itemsConn.connectTimeout = 8000
+            itemsConn.readTimeout = 8000
+            if (itemsConn.responseCode == 200) {
+                val json = JSONObject(itemsConn.inputStream.bufferedReader().use { it.readText() })
+                val items = json.optJSONArray("items")
+                val videos = mutableListOf<SearchResultItem>()
+                if (items != null) {
+                    for (i in 0 until items.length()) {
+                        val snippet = items.getJSONObject(i).optJSONObject("snippet") ?: continue
+                        val resId = snippet.optJSONObject("resourceId")
+                        val vid = resId?.optString("videoId", "") ?: ""
+                        val itemTitle = snippet.optString("title", "")
+                        val itemChannel = snippet.optString("videoOwnerChannelTitle", "")
+                            .ifBlank { snippet.optString("channelTitle", "YouTube") }
+                        val itemThumb = snippet.optJSONObject("thumbnails")?.optJSONObject("high")?.optString("url")
+                            ?: YoutubeExtractor.getThumbnailUrl(vid)
+
+                        if (vid.isNotBlank() && itemTitle.isNotBlank() && itemTitle != "Private video" && itemTitle != "Deleted video") {
+                            videos.add(
+                                SearchResultItem(
+                                    videoId = vid,
+                                    title = itemTitle,
+                                    channelTitle = itemChannel,
+                                    thumbnailUrl = itemThumb,
+                                    url = "https://www.youtube.com/watch?v=$vid",
+                                    rawTitle = itemTitle
+                                )
+                            )
+                        }
+                    }
+                }
+                return PlaylistInfo(
+                    playlistId = playlistId,
+                    title = title,
+                    author = author,
+                    thumbnailUrl = thumb.ifBlank { if (videos.isNotEmpty()) videos.first().thumbnailUrl else "" },
+                    trackCount = videos.size,
+                    tracks = videos
+                )
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return null
     }
 
     private fun searchViaYoutubeMusic(query: String, filter: SearchFilter = SearchFilter.ALL): SearchResultData {
