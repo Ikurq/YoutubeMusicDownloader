@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Color
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.PlayArrow
@@ -76,6 +77,8 @@ fun LibraryScreen(
     onScanLocalFiles: (() -> Unit)? = null,
     onAddRecoveredTracks: ((List<Track>) -> Unit)? = null,
     onDismissUnindexed: (() -> Unit)? = null,
+    onDownloadAllUndownloaded: (() -> Unit)? = null,
+    onRemoveUndownloaded: (() -> Unit)? = null,
     onUpdateTrackMetadata: ((trackId: String, title: String, artist: String, album: String, thumbnailUrl: String?) -> Unit)? = null,
     onSearchCandidates: (suspend (query: String) -> List<SearchResultItem>)? = null
 ) {
@@ -94,10 +97,18 @@ fun LibraryScreen(
         }
     }
 
-    val favoriteCount = remember(tracks) { tracks.count { it.isFavorite } }
+    // ライブラリ一覧は端末に保存完了した楽曲のみを対象とする
+    val downloadedTracks = remember(tracks) {
+        tracks.filter { it.isDownloaded && !it.localFilePath.isNullOrBlank() }
+    }
+    val undownloadedTracks = remember(tracks) {
+        tracks.filter { !it.isDownloaded || it.localFilePath.isNullOrBlank() }
+    }
 
-    val duplicateGroups = remember(tracks) {
-        tracks.groupBy { track ->
+    val favoriteCount = remember(downloadedTracks) { downloadedTracks.count { it.isFavorite } }
+
+    val duplicateGroups = remember(downloadedTracks) {
+        downloadedTracks.groupBy { track ->
             track.title.trim()
                 .replace(Regex("""\s*\(\d+\)$"""), "")
                 .replace(Regex("""\s*\[\d+\]$"""), "")
@@ -106,8 +117,8 @@ fun LibraryScreen(
         }.filter { it.value.size > 1 && it.key.isNotBlank() }
     }
 
-    val filteredTracks = remember(tracks, searchQuery, showOnlyFavorites) {
-        val base = if (showOnlyFavorites) tracks.filter { it.isFavorite } else tracks
+    val filteredTracks = remember(downloadedTracks, searchQuery, showOnlyFavorites) {
+        val base = if (showOnlyFavorites) downloadedTracks.filter { it.isFavorite } else downloadedTracks
         if (searchQuery.isBlank()) base
         else base.filter {
             it.title.contains(searchQuery, ignoreCase = true) ||
@@ -116,7 +127,7 @@ fun LibraryScreen(
         }
     }
 
-    val totalSizeBytes = remember(tracks) { FileUtils.calculateTotalStorageSize(tracks) }
+    val totalSizeBytes = remember(downloadedTracks) { FileUtils.calculateTotalStorageSize(downloadedTracks) }
     val formattedTotalSize = remember(totalSizeBytes) { FileUtils.formatFileSize(totalSizeBytes) }
 
     val filteredSizeBytes = remember(filteredTracks) { FileUtils.calculateTotalStorageSize(filteredTracks) }
@@ -135,7 +146,7 @@ fun LibraryScreen(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "楽曲ライブラリ (${tracks.size} 曲)",
+                    text = "楽曲ライブラリ (${downloadedTracks.size} 曲)",
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -221,6 +232,58 @@ fun LibraryScreen(
                         shape = RoundedCornerShape(8.dp)
                     ) {
                         Text("確認・追加")
+                    }
+                }
+            }
+        }
+
+        // 未ダウンロード楽曲の整理バナー（プレイリスト等から未DLの楽曲が混入している場合）
+        if (undownloadedTracks.isNotEmpty()) {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.9f),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Download,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "未ダウンロードの楽曲が ${undownloadedTracks.size} 件あります",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
+                        Text(
+                            text = "プレイリスト等から取り込まれた未保存の楽曲です",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Button(
+                            onClick = { onDownloadAllUndownloaded?.invoke() },
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("すべてDL")
+                        }
+                        Spacer(modifier = Modifier.width(4.dp))
+                        TextButton(
+                            onClick = { onRemoveUndownloaded?.invoke() }
+                        ) {
+                            Text("除外", color = MaterialTheme.colorScheme.error)
+                        }
                     }
                 }
             }

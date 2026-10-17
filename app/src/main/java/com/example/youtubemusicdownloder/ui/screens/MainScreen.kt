@@ -363,6 +363,8 @@ fun MainScreen(
                         onScanLocalFiles = { viewModel.scanLocalFiles(context, silent = false) },
                         onAddRecoveredTracks = { viewModel.addRecoveredTracks(it) },
                         onDismissUnindexed = { viewModel.dismissUnindexedTracksDialog() },
+                        onDownloadAllUndownloaded = { viewModel.downloadAllUndownloadedTracks() },
+                        onRemoveUndownloaded = { viewModel.removeUndownloadedTracks() },
                         onUpdateTrackMetadata = { trackId, title, artist, album, thumbUrl ->
                             viewModel.updateTrackMetadata(trackId, title, artist, album, thumbUrl)
                         },

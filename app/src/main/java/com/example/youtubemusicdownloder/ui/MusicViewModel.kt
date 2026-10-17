@@ -691,6 +691,33 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         _statusMessage.value = "${tracksToDelete.size}件の重複楽曲を削除しました"
     }
 
+    fun downloadAllUndownloadedTracks() {
+        val undownloaded = _tracks.value.filter { !it.isDownloaded || it.localFilePath.isNullOrBlank() }
+        if (undownloaded.isEmpty()) return
+        val items = undownloaded.filter { it.youtubeUrl.isNotBlank() }.map { Pair(it.youtubeUrl, it.title) }
+        if (items.isNotEmpty()) {
+            addMultipleToDownloadQueue(items)
+            _statusMessage.value = "${items.size}件の未ダウンロード楽曲のダウンロードを開始しました"
+        }
+    }
+
+    fun removeUndownloadedTracks() {
+        val toRemove = _tracks.value.filter { !it.isDownloaded || it.localFilePath.isNullOrBlank() }
+        if (toRemove.isEmpty()) return
+        val removeIds = toRemove.map { it.id }.toSet()
+        val updated = _tracks.value.filter { !removeIds.contains(it.id) }
+        _tracks.value = updated
+        repository.saveTracks(updated)
+
+        val updatedPlaylists = _playlists.value.map { pl ->
+            pl.copy(trackIds = pl.trackIds.filter { !removeIds.contains(it) })
+        }
+        _playlists.value = updatedPlaylists
+        repository.savePlaylists(updatedPlaylists)
+
+        _statusMessage.value = "${toRemove.size}件の未ダウンロード楽曲をライブラリから削除しました"
+    }
+
     fun createPlaylist(name: String) {
         val trimmed = name.trim()
         if (trimmed.isBlank()) return
